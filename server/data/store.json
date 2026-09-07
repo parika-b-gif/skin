@@ -1,0 +1,223 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "name": "Cloud Milk Cleanser",
+      "category": "Cleansers",
+      "price": 28,
+      "rating": 4.9,
+      "reviews": 128,
+      "size": "150 ml"
+    },
+    {
+      "id": 2,
+      "name": "Dew Drop Serum",
+      "category": "Serums",
+      "price": 42,
+      "rating": 4.8,
+      "reviews": 96,
+      "size": "30 ml"
+    },
+    {
+      "id": 3,
+      "name": "Petal Veil Moisturizer",
+      "category": "Moisturizers",
+      "price": 36,
+      "rating": 4.7,
+      "reviews": 84,
+      "size": "50 ml"
+    },
+    {
+      "id": 4,
+      "name": "Sun Cloud SPF 50",
+      "category": "Sun Care",
+      "price": 31,
+      "rating": 4.9,
+      "reviews": 211,
+      "size": "50 ml"
+    },
+    {
+      "id": 5,
+      "name": "Night Bloom Oil",
+      "category": "Treatments",
+      "price": 48,
+      "rating": 4.8,
+      "reviews": 63,
+      "size": "30 ml"
+    },
+    {
+      "id": 6,
+      "name": "Sea Glass Eye Cream",
+      "category": "Treatments",
+      "price": 34,
+      "rating": 4.6,
+      "reviews": 52,
+      "size": "15 ml"
+    },
+    {
+      "id": 7,
+      "name": "Rosewater Mist",
+      "category": "Toners",
+      "price": 22,
+      "rating": 4.7,
+      "reviews": 76,
+      "size": "100 ml"
+    },
+    {
+      "id": 8,
+      "name": "Soft Reset Mask",
+      "category": "Masks",
+      "price": 29,
+      "rating": 4.8,
+      "reviews": 41,
+      "size": "75 ml"
+    },
+    {
+      "id": 9,
+      "name": "Citrus Enzyme Polish",
+      "category": "Exfoliators",
+      "price": 27,
+      "rating": 4.7,
+      "reviews": 58,
+      "size": "60 ml"
+    },
+    {
+      "id": 10,
+      "name": "Barrier Balm",
+      "category": "Treatments",
+      "price": 39,
+      "rating": 4.9,
+      "reviews": 88,
+      "size": "45 ml"
+    },
+    {
+      "id": 11,
+      "name": "Cloud Body Lotion",
+      "category": "Body Care",
+      "price": 26,
+      "rating": 4.8,
+      "reviews": 74,
+      "size": "250 ml"
+    },
+    {
+      "id": 12,
+      "name": "Under-Eye Rescue Patches",
+      "category": "Treatments",
+      "price": 24,
+      "rating": 4.6,
+      "reviews": 49,
+      "size": "30 pairs"
+    },
+    {
+      "id": 13,
+      "name": "Lip Dew Treatment",
+      "category": "Lip Care",
+      "price": 18,
+      "rating": 4.8,
+      "reviews": 112,
+      "size": "12 ml"
+    },
+    {
+      "id": 14,
+      "name": "Green Tea Gel Cleanser",
+      "category": "Cleansers",
+      "price": 25,
+      "rating": 4.7,
+      "reviews": 67,
+      "size": "120 ml"
+    },
+    {
+      "id": 15,
+      "name": "Cloudberry Brightening Drops",
+      "category": "Serums",
+      "price": 45,
+      "rating": 4.9,
+      "reviews": 103,
+      "size": "30 ml"
+    },
+    {
+      "id": 16,
+      "name": "Mineral Bath Soak",
+      "category": "Body Care",
+      "price": 30,
+      "rating": 4.8,
+      "reviews": 39,
+      "size": "400 g"
+    },
+    {
+      "id": 17,
+      "name": "Melt Away Cleansing Balm",
+      "category": "Cleansers",
+      "price": 33,
+      "rating": 4.9,
+      "reviews": 91,
+      "size": "90 ml"
+    },
+    {
+      "id": 18,
+      "name": "Lunar Peptide Cream",
+      "category": "Moisturizers",
+      "price": 44,
+      "rating": 4.8,
+      "reviews": 72,
+      "size": "50 ml"
+    },
+    {
+      "id": 19,
+      "name": "Blue Hour Calming Gel",
+      "category": "Treatments",
+      "price": 32,
+      "rating": 4.7,
+      "reviews": 55,
+      "size": "50 ml"
+    },
+    {
+      "id": 20,
+      "name": "Daily Glow Essence",
+      "category": "Toners",
+      "price": 28,
+      "rating": 4.8,
+      "reviews": 64,
+      "size": "120 ml"
+    },
+    {
+      "id": 21,
+      "name": "Apricot Cloud Scrub",
+      "category": "Exfoliators",
+      "price": 25,
+      "rating": 4.6,
+      "reviews": 47,
+      "size": "70 ml"
+    },
+    {
+      "id": 22,
+      "name": "After Sun Milk",
+      "category": "Sun Care",
+      "price": 29,
+      "rating": 4.8,
+      "reviews": 86,
+      "size": "150 ml"
+    },
+    {
+      "id": 23,
+      "name": "Vanilla Mint Lip Mask",
+      "category": "Lip Care",
+      "price": 21,
+      "rating": 4.9,
+      "reviews": 93,
+      "size": "15 ml"
+    },
+    {
+      "id": 24,
+      "name": "Cloud Soft Hand Cream",
+      "category": "Body Care",
+      "price": 19,
+      "rating": 4.7,
+      "reviews": 61,
+      "size": "75 ml"
+    }
+  ],
+  "carts": {},
+  "wishlists": {},
+  "orders": []
+}
