@@ -1644,6 +1644,35 @@ footer {
   color: var(--ink);
   font: inherit;
 }
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+.auth-form .google-button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+}
+.auth-form .google-button span {
+  color: #4285f4;
+  margin-right: 7px;
+}
+.auth-error {
+  color: #a33;
+  margin: 0;
+}
 .auth-form button {
   border: 0;
   background: var(--ink);

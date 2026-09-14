@@ -370,7 +370,9 @@ function ShopProvider({ children }) {
   const [products, setProducts] = useState(fallbackProducts);
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(
+    () => window.location.pathname !== "/contact",
+  );
   const [apiError, setApiError] = useState("");
   const [token, setToken] = useState(
     () => localStorage.getItem("luma-token") || "",
@@ -388,6 +390,9 @@ function ShopProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem("session-id", sessionId);
+    if (pathname === "/contact") {
+      return;
+    }
     Promise.all([
       fetch(`${API_URL}/products`).then(async (response) => {
         if (!response.ok) throw new Error("Catalog unavailable");
@@ -519,6 +524,14 @@ function ShopProvider({ children }) {
     setToken(data.token);
     setUser(data.user);
   };
+  const completeGoogleLogin = async (googleToken) => {
+    const response = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${googleToken}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Google sign-in failed");
+    saveAuth({ token: googleToken, user: data.data.user });
+  };
   const authenticate = async (path, credentials) => {
     const response = await fetch(`${API_URL}/auth/${path}`, {
       method: "POST",
@@ -548,6 +561,7 @@ function ShopProvider({ children }) {
         authHeaders,
         login,
         register,
+        completeGoogleLogin,
         logout,
         cart,
         wishlist,
@@ -658,9 +672,11 @@ function ProductImage({ src, alt, className }) {
 function AuthPage({ mode = "login" }) {
   const navigate = useNavigate();
   const { login, register, user, setApiError } = useShop();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const googleError = searchParams.get("error");
   useEffect(() => {
     if (user) navigate(user.role === "admin" ? "/admin" : "/shop");
   }, [user, navigate]);
@@ -705,6 +721,15 @@ function AuthPage({ mode = "login" }) {
               ? "Log in"
               : "Create account"}
         </button>
+        <div className="auth-divider"><span>or</span></div>
+        <button
+          type="button"
+          className="google-button"
+          onClick={() => window.location.assign(`${API_URL}/auth/google`)}
+        >
+          <span aria-hidden="true">G</span> Continue with Google
+        </button>
+        {googleError && <p className="auth-error">{googleError}</p>}
         <Link
           className="text-button"
           to={mode === "login" ? "/register" : "/login"}
@@ -716,6 +741,27 @@ function AuthPage({ mode = "login" }) {
       </form>
     </main>
   );
+}
+
+function GoogleAuthCallbackPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { completeGoogleLogin, setApiError } = useShop();
+  useEffect(() => {
+    const token = searchParams.get("token");
+    if (!token) {
+      setApiError("Google sign-in did not return a token");
+      navigate("/login", { replace: true });
+      return;
+    }
+    completeGoogleLogin(token)
+      .then(() => navigate("/shop", { replace: true }))
+      .catch((error) => {
+        setApiError(error.message);
+        navigate("/login", { replace: true });
+      });
+  }, [completeGoogleLogin, navigate, searchParams, setApiError]);
+  return <main className="auth-page"><p>Signing you in with Google…</p></main>;
 }
 
 function AdminPage() {
@@ -1872,21 +1918,12 @@ function JournalPage() {
 }
 
 function ContactPage() {
-  const [content, setContent] = useState(fallbackContact);
+  const content = fallbackContact;
   const { setApiError } = useShop();
   const [form, setForm] = useState({ name: "", email: "", message: "" });
   const [sent, setSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  useEffect(() => {
-    fetch(`${API_URL}/content/contact`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Contact details unavailable");
-        return response.json();
-      })
-      .then((data) => setContent({ ...fallbackContact, ...data }))
-      .catch(() => setContent(fallbackContact));
-  }, []);
   const submitMessage = async (event) => {
     event.preventDefault();
     setIsSubmitting(true);
@@ -2280,6 +2317,7 @@ function App() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<AuthPage />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/auth/google/callback" element={<GoogleAuthCallbackPage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
         <footer>

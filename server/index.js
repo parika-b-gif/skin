@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import { MongoClient, ObjectId } from "mongodb";
 import Stripe from "stripe";
+import jwt from "jsonwebtoken";
 import {
   createToken,
   hashPassword,
@@ -31,6 +32,12 @@ const jwtSecret =
   (process.env.NODE_ENV === "production"
     ? ""
     : "local-development-only-change-me");
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const googleRedirectUri =
+  process.env.GOOGLE_REDIRECT_URI ||
+  "http://localhost:3001/api/auth/google/callback";
+const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
 
 if (!mongoUri) {
   console.error(
@@ -43,7 +50,7 @@ if (!jwtSecret) {
   process.exit(1);
 }
 
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+app.use(cors({ origin: clientUrl }));
 app.post(
   "/api/webhooks/stripe",
   express.raw({ type: "application/json" }),
@@ -151,6 +158,7 @@ async function connectDatabase() {
     });
   }
   await usersCollection.createIndex({ email: 1 }, { unique: true });
+  await usersCollection.createIndex({ googleId: 1 }, { unique: true, sparse: true });
 
   const seed = JSON.parse(await readFile(seedPath, "utf8"));
   if (seed.products?.length) {
@@ -406,6 +414,80 @@ app.post("/api/auth/login", async (request, response) => {
     });
   } catch (error) {
     sendError(response, error);
+  }
+});
+
+app.get("/api/auth/google", (request, response) => {
+  if (!googleClientId || !googleClientSecret)
+    return response.status(503).json({
+      ok: false,
+      error: "Google sign-in is not configured on this server",
+    });
+  const state = jwt.sign({ nonce: randomUUID() }, jwtSecret, {
+    expiresIn: "10m",
+  });
+  const parameters = new URLSearchParams({
+    client_id: googleClientId,
+    redirect_uri: googleRedirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    prompt: "select_account",
+  });
+  response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${parameters}`);
+});
+
+app.get("/api/auth/google/callback", async (request, response) => {
+  try {
+    if (!googleClientId || !googleClientSecret)
+      throw new Error("Google sign-in is not configured on this server");
+    if (!request.query.code || !request.query.state) throw new Error("Google sign-in was cancelled");
+    jwt.verify(String(request.query.state), jwtSecret);
+
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: String(request.query.code),
+        client_id: googleClientId,
+        client_secret: googleClientSecret,
+        redirect_uri: googleRedirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+    if (!tokenResponse.ok) throw new Error("Google could not verify this sign-in");
+    const tokens = await tokenResponse.json();
+    const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (!profileResponse.ok) throw new Error("Google profile could not be loaded");
+    const profile = await profileResponse.json();
+    if (!profile.sub || !profile.email || !profile.email_verified)
+      throw new Error("A verified Google email address is required");
+
+    const email = profile.email.toLowerCase();
+    let user = await usersCollection.findOne({ googleId: profile.sub });
+    if (!user) {
+      user = await usersCollection.findOne({ email });
+      if (user) {
+        await usersCollection.updateOne({ _id: user._id }, { $set: { googleId: profile.sub } });
+        user.googleId = profile.sub;
+      } else {
+        const newUser = {
+          email,
+          googleId: profile.sub,
+          role: "user",
+          createdAt: new Date(),
+        };
+        const result = await usersCollection.insertOne(newUser);
+        user = { ...newUser, _id: result.insertedId };
+      }
+    }
+    const token = createToken(user, jwtSecret);
+    response.redirect(`${clientUrl}/auth/google/callback?token=${encodeURIComponent(token)}`);
+  } catch (error) {
+    console.error(error);
+    response.redirect(`${clientUrl}/login?error=${encodeURIComponent(error.message)}`);
   }
 });
 
