@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import {
@@ -28,584 +29,563 @@ import {
   Sun,
   Trash2,
 } from "lucide-react";
+import {
+  initialProducts,
+  categories,
+  countries,
+  initialJournal,
+  initialContact,
+  initialMessages,
+  initialReviews,
+  initialOrders,
+  defaultUsers,
+} from "./mockData.js";
 import "./App.css";
 
-const fallbackProducts = [
-  {
-    id: 1,
-    name: "Cloud Milk Cleanser",
-    category: "Cleansers",
-    price: 28,
-    rating: 4.9,
-    reviews: 128,
-    size: "150 ml",
-    image:
-      "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A cushiony, low-foam cleanser that melts away the day without leaving skin tight.",
-  },
-  {
-    id: 2,
-    name: "Dew Drop Serum",
-    category: "Serums",
-    price: 42,
-    rating: 4.8,
-    reviews: 96,
-    size: "30 ml",
-    image:
-      "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A glass-skin serum with niacinamide, hyaluronic acid, and a soft botanical glow.",
-  },
-  {
-    id: 3,
-    name: "Petal Veil Moisturizer",
-    category: "Moisturizers",
-    price: 36,
-    rating: 4.7,
-    reviews: 84,
-    size: "50 ml",
-    image:
-      "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A featherlight daily veil that calms, cushions, and keeps moisture close.",
-  },
-  {
-    id: 4,
-    name: "Sun Cloud SPF 50",
-    category: "Sun Care",
-    price: 31,
-    rating: 4.9,
-    reviews: 211,
-    size: "50 ml",
-    image:
-      "https://images.unsplash.com/photo-1556229010-6c3f2c9ca5f8?auto=format&fit=crop&w=900&q=85",
-    description:
-      "Invisible mineral protection with a dewy finish and no chalky cast.",
-  },
-  {
-    id: 5,
-    name: "Night Bloom Oil",
-    category: "Treatments",
-    price: 48,
-    rating: 4.8,
-    reviews: 63,
-    size: "30 ml",
-    image:
-      "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A restorative facial oil made for slow evenings and soft, rested skin.",
-  },
-  {
-    id: 6,
-    name: "Sea Glass Eye Cream",
-    category: "Treatments",
-    price: 34,
-    rating: 4.6,
-    reviews: 52,
-    size: "15 ml",
-    image:
-      "https://images.unsplash.com/photo-1570194065650-d99fb4b38b18?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A cooling eye cream that brightens the look of tired mornings.",
-  },
-  {
-    id: 7,
-    name: "Rosewater Mist",
-    category: "Toners",
-    price: 22,
-    rating: 4.7,
-    reviews: 76,
-    size: "100 ml",
-    image:
-      "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A fine, refreshing mist that gives skin an instant sip of hydration.",
-  },
-  {
-    id: 8,
-    name: "Soft Reset Mask",
-    category: "Masks",
-    price: 29,
-    rating: 4.8,
-    reviews: 41,
-    size: "75 ml",
-    image:
-      "https://images.unsplash.com/photo-1570554886111-e80fcca6a1d0?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A creamy overnight mask for the nights when your skin needs a reset.",
-  },
-  {
-    id: 9,
-    name: "Citrus Enzyme Polish",
-    category: "Exfoliators",
-    price: 27,
-    rating: 4.7,
-    reviews: 58,
-    size: "60 ml",
-    image:
-      "https://images.unsplash.com/photo-1612817288484-6f916006741a?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A gentle fruit enzyme polish that leaves skin smooth, bright, and comfortable.",
-  },
-  {
-    id: 10,
-    name: "Barrier Balm",
-    category: "Treatments",
-    price: 39,
-    rating: 4.9,
-    reviews: 88,
-    size: "45 ml",
-    image:
-      "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A rich, comforting balm for dry patches, stressed skin, and overnight repair.",
-  },
-  {
-    id: 11,
-    name: "Cloud Body Lotion",
-    category: "Body Care",
-    price: 26,
-    rating: 4.8,
-    reviews: 74,
-    size: "250 ml",
-    image:
-      "https://images.unsplash.com/photo-1608248597279-f99d160bfcbc?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A silky everyday lotion with oat, shea, and a soft skin-scented finish.",
-  },
-  {
-    id: 12,
-    name: "Under-Eye Rescue Patches",
-    category: "Treatments",
-    price: 24,
-    rating: 4.6,
-    reviews: 49,
-    size: "30 pairs",
-    image:
-      "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=900&q=85",
-    description:
-      "Cooling hydrogel patches for a refreshed, rested look in ten quiet minutes.",
-  },
-  {
-    id: 13,
-    name: "Lip Dew Treatment",
-    category: "Lip Care",
-    price: 18,
-    rating: 4.8,
-    reviews: 112,
-    size: "12 ml",
-    image:
-      "https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A glossy treatment oil that softens lips with a sheer veil of hydration.",
-  },
-  {
-    id: 14,
-    name: "Green Tea Gel Cleanser",
-    category: "Cleansers",
-    price: 25,
-    rating: 4.7,
-    reviews: 67,
-    size: "120 ml",
-    image:
-      "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A fresh gel cleanser that lifts excess oil while keeping skin balanced.",
-  },
-  {
-    id: 15,
-    name: "Cloudberry Brightening Drops",
-    category: "Serums",
-    price: 45,
-    rating: 4.9,
-    reviews: 103,
-    size: "30 ml",
-    image:
-      "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A vitamin-rich brightening concentrate for a clearer, more even-looking glow.",
-  },
-  {
-    id: 16,
-    name: "Mineral Bath Soak",
-    category: "Body Care",
-    price: 30,
-    rating: 4.8,
-    reviews: 39,
-    size: "400 g",
-    image:
-      "https://images.unsplash.com/photo-1607006344380-b6775a0824aa?auto=format&fit=crop&w=900&q=85",
-    description:
-      "Mineral-rich salts for a restorative soak at the end of a long day.",
-  },
-  {
-    id: 17,
-    name: "Melt Away Cleansing Balm",
-    category: "Cleansers",
-    price: 33,
-    rating: 4.9,
-    reviews: 91,
-    size: "90 ml",
-    image:
-      "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A buttery first cleanse that dissolves makeup, sunscreen, and the pace of the day.",
-  },
-  {
-    id: 18,
-    name: "Lunar Peptide Cream",
-    category: "Moisturizers",
-    price: 44,
-    rating: 4.8,
-    reviews: 72,
-    size: "50 ml",
-    image:
-      "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A plush peptide cream that supports a smoother, bouncier-looking complexion.",
-  },
-  {
-    id: 19,
-    name: "Blue Hour Calming Gel",
-    category: "Treatments",
-    price: 32,
-    rating: 4.7,
-    reviews: 55,
-    size: "50 ml",
-    image:
-      "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A cooling gel treatment for flushed, reactive, or overheated skin.",
-  },
-  {
-    id: 20,
-    name: "Daily Glow Essence",
-    category: "Toners",
-    price: 28,
-    rating: 4.8,
-    reviews: 64,
-    size: "120 ml",
-    image:
-      "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A silky essence that layers hydration into the first step of your routine.",
-  },
-  {
-    id: 21,
-    name: "Apricot Cloud Scrub",
-    category: "Exfoliators",
-    price: 25,
-    rating: 4.6,
-    reviews: 47,
-    size: "70 ml",
-    image:
-      "https://images.unsplash.com/photo-1612817288484-6f916006741a?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A soft cream scrub with rounded powders for a polished, never stripped finish.",
-  },
-  {
-    id: 22,
-    name: "After Sun Milk",
-    category: "Sun Care",
-    price: 29,
-    rating: 4.8,
-    reviews: 86,
-    size: "150 ml",
-    image:
-      "https://images.unsplash.com/photo-1556229010-6c3f2c9ca5f8?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A cooling after-sun milk that replenishes comfort after bright days outside.",
-  },
-  {
-    id: 23,
-    name: "Vanilla Mint Lip Mask",
-    category: "Lip Care",
-    price: 21,
-    rating: 4.9,
-    reviews: 93,
-    size: "15 ml",
-    image:
-      "https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=900&q=85",
-    description:
-      "An overnight lip mask that wakes up soft, cushiony, and quietly glossy.",
-  },
-  {
-    id: 24,
-    name: "Cloud Soft Hand Cream",
-    category: "Body Care",
-    price: 19,
-    rating: 4.7,
-    reviews: 61,
-    size: "75 ml",
-    image:
-      "https://images.unsplash.com/photo-1608248597279-f99d160bfcbc?auto=format&fit=crop&w=900&q=85",
-    description:
-      "A fast-absorbing hand cream for soft palms without a slippery finish.",
-  },
-];
-const categories = [
-  "All products",
-  "Cleansers",
-  "Serums",
-  "Moisturizers",
-  "Sun Care",
-  "Treatments",
-  "Toners",
-  "Masks",
-  "Exfoliators",
-  "Body Care",
-  "Lip Care",
-];
 const ShopContext = createContext(null);
-const API_URL = "http://localhost:3001/api";
-const fallbackContact = {
-  email: "hello@luma.skin",
-  phone: "+1 800 555 1234",
-  address: "24 Orchard Street\nNew York, NY",
-  hours: "Monday to Friday, 9am to 5pm",
-};
+
+function loadStorage(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.error(`Failed saving to ${key}:`, err);
+  }
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
 
 function ShopProvider({ children }) {
-  const [products, setProducts] = useState(fallbackProducts);
-  const [cart, setCart] = useState([]);
-  const [wishlist, setWishlist] = useState([]);
-  const [loading, setLoading] = useState(
-    () => window.location.pathname !== "/contact",
+  const [products, setProducts] = useState(() =>
+    loadStorage("luma-products", initialProducts),
   );
+  const [cart, setCart] = useState(() => loadStorage("luma-cart", []));
+  const [wishlist, setWishlist] = useState(() =>
+    loadStorage("luma-wishlist", []),
+  );
+  const [users, setUsers] = useState(() =>
+    loadStorage("luma-users", defaultUsers),
+  );
+  const [user, setUser] = useState(() => loadStorage("luma-user", null));
+  const [orders, setOrders] = useState(() =>
+    loadStorage("luma-orders", initialOrders),
+  );
+  const [reviews, setReviews] = useState(() =>
+    loadStorage("luma-reviews", initialReviews),
+  );
+  const [messages, setMessages] = useState(() =>
+    loadStorage("luma-contact-messages", initialMessages),
+  );
+  const [journal, setJournal] = useState(() =>
+    loadStorage("luma-journal", initialJournal),
+  );
+  const [contact] = useState(initialContact);
   const [apiError, setApiError] = useState("");
-  const [token, setToken] = useState(
-    () => localStorage.getItem("luma-token") || "",
-  );
-  const [user, setUser] = useState(null);
   const [darkMode, setDarkMode] = useState(
     () => localStorage.getItem("luma-theme") === "dark",
   );
-  const { pathname } = useLocation();
-  const sessionId = localStorage.getItem("session-id") || crypto.randomUUID();
-  const authHeaders = useCallback(
-    () => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  );
+  const [loading] = useState(false);
+
+  // Sync to localStorage
+  useEffect(() => {
+    saveStorage("luma-products", products);
+  }, [products]);
 
   useEffect(() => {
-    localStorage.setItem("session-id", sessionId);
-    if (pathname === "/contact") {
-      return;
-    }
-    Promise.all([
-      fetch(`${API_URL}/products`).then(async (response) => {
-        if (!response.ok) throw new Error("Catalog unavailable");
-        return response.json();
-      }),
-      fetch(`${API_URL}/cart/${sessionId}`).then(async (response) => {
-        if (!response.ok) throw new Error("Cart unavailable");
-        return response.json();
-      }),
-      fetch(`${API_URL}/wishlist/${sessionId}`).then(async (response) => {
-        if (!response.ok) throw new Error("Wishlist unavailable");
-        return response.json();
-      }),
-    ])
-      .then(([productData, cartData, wishlistData]) => {
-        setProducts(productData.products || []);
-        const productMap = new Map(
-          (productData.products || []).map((product) => [product.id, product]),
-        );
-        setCart(
-          (cartData.items || [])
-            .map((item) => ({
-              ...productMap.get(item.productId),
-              quantity: item.quantity,
-            }))
-            .filter((item) => item.id),
-        );
-        setWishlist(wishlistData.productIds || []);
-      })
-      .catch((error) => {
-        if (pathname !== "/contact")
-          setApiError(
-            `${error.message}. Start the API and check your connection.`,
-          );
-      })
-      .finally(() => setLoading(false));
-  }, [pathname, sessionId]);
+    saveStorage("luma-cart", cart);
+  }, [cart]);
 
   useEffect(() => {
-    if (!token) return;
-    fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Your session has expired");
-        const data = await response.json();
-        setUser(data.data.user);
-      })
-      .catch((error) => {
-        localStorage.removeItem("luma-token");
-        setToken("");
-        setApiError(error.message);
-      });
-  }, [token]);
+    saveStorage("luma-wishlist", wishlist);
+  }, [wishlist]);
+
+  useEffect(() => {
+    saveStorage("luma-users", users);
+  }, [users]);
+
+  useEffect(() => {
+    saveStorage("luma-user", user);
+  }, [user]);
+
+  useEffect(() => {
+    saveStorage("luma-orders", orders);
+  }, [orders]);
+
+  useEffect(() => {
+    saveStorage("luma-reviews", reviews);
+  }, [reviews]);
+
+  useEffect(() => {
+    saveStorage("luma-contact-messages", messages);
+  }, [messages]);
+
+  useEffect(() => {
+    saveStorage("luma-journal", journal);
+  }, [journal]);
 
   useEffect(() => {
     localStorage.setItem("luma-theme", darkMode ? "dark" : "light");
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
   }, [darkMode]);
-  const syncCart = useCallback(
-    (items) =>
-      fetch(`${API_URL}/cart/${sessionId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((item) => ({
-            productId: item.id,
-            quantity: item.quantity,
-          })),
-        }),
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}));
-            throw new Error(data.error || "Cart could not be saved");
-          }
-          return response.json();
-        })
-        .catch((error) => setApiError(error.message)),
-    [sessionId],
-  );
-  const addToCart = (product) =>
-    setCart((items) => {
-      const existing = items.find((item) => item.id === product.id);
-      const next = existing
-        ? items.map((item) =>
-            item.id === product.id
-              ? { ...item, quantity: item.quantity + 1 }
-              : item,
-          )
-        : [...items, { ...product, quantity: 1 }];
-      syncCart(next);
-      return next;
+
+  // Cart operations
+  const addToCart = useCallback((product) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
+        );
+      }
+      return [...prev, { ...product, quantity: 1 }];
     });
-  const updateQuantity = (id, amount) =>
-    setCart((items) => {
-      const next = items
+  }, []);
+
+  const updateQuantity = useCallback((id, amount) => {
+    setCart((prev) =>
+      prev
         .map((item) =>
           item.id === id
             ? { ...item, quantity: Math.max(0, item.quantity + amount) }
             : item,
         )
-        .filter((item) => item.quantity > 0);
-      syncCart(next);
-      return next;
-    });
-  const removeFromCart = (id) =>
-    setCart((items) => {
-      const next = items.filter((item) => item.id !== id);
-      syncCart(next);
-      return next;
-    });
+        .filter((item) => item.quantity > 0),
+    );
+  }, []);
+
+  const removeFromCart = useCallback((id) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
   const clearCart = useCallback(() => {
     setCart([]);
-    syncCart([]);
-  }, [syncCart]);
-  const toggleWishlist = (id) => {
-    setWishlist((items) =>
-      items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
+  }, []);
+
+  // Wishlist operations
+  const toggleWishlist = useCallback((id) => {
+    setWishlist((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     );
-    fetch(`${API_URL}/wishlist/${sessionId}/${id}`, { method: "POST" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Wishlist could not be saved");
-      })
-      .catch((error) => setApiError(error.message));
-  };
-  const saveAuth = (data) => {
-    localStorage.setItem("luma-token", data.token);
-    setToken(data.token);
-    setUser(data.user);
-  };
-  const completeGoogleLogin = async (googleToken) => {
-    const response = await fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${googleToken}` },
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Google sign-in failed");
-    saveAuth({ token: googleToken, user: data.data.user });
-  };
-  const authenticate = async (path, credentials) => {
-    const response = await fetch(`${API_URL}/auth/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(credentials),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Authentication failed");
-    saveAuth(data.data);
-  };
-  const login = (credentials) => authenticate("login", credentials);
-  const register = (credentials) => authenticate("register", credentials);
-  const logout = () => {
-    localStorage.removeItem("luma-token");
-    setToken("");
-    setUser(null);
-  };
-  return (
-    <ShopContext.Provider
-      value={{
-        products,
-        loading,
-        apiError,
-        setApiError,
-        user,
-        token,
-        authHeaders,
-        login,
-        register,
-        completeGoogleLogin,
-        logout,
-        cart,
-        wishlist,
-        darkMode,
-        setDarkMode,
-        addToCart,
-        updateQuantity,
-        removeFromCart,
-        clearCart,
-        toggleWishlist,
-      }}
-    >
-      {children}
-    </ShopContext.Provider>
+  }, []);
+
+  // Auth operations
+  const login = useCallback(
+    async ({ email, password }) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      const matched = users.find(
+        (u) =>
+          u.email.toLowerCase() === normalizedEmail && u.password === password,
+      );
+      if (!matched) {
+        throw new Error(
+          "Invalid email or password. You can use the Demo Customer or Demo Admin buttons.",
+        );
+      }
+      const safeUser = {
+        id: matched.id,
+        name: matched.name,
+        email: matched.email,
+        role: matched.role,
+      };
+      setUser(safeUser);
+      return safeUser;
+    },
+    [users],
   );
+
+  const register = useCallback(
+    async ({ email, password, name }) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
+        throw new Error("An account with this email already exists. Please log in.");
+      }
+      const newUser = {
+        id: "user-" + Date.now(),
+        name: name || email.split("@")[0],
+        email: normalizedEmail,
+        password,
+        role: "customer",
+      };
+      setUsers((prev) => [...prev, newUser]);
+      const safeUser = {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+      };
+      setUser(safeUser);
+      return safeUser;
+    },
+    [users],
+  );
+
+  const quickLogin = useCallback(
+    (role = "customer") => {
+      if (role === "admin") {
+        const adminUser = users.find((u) => u.role === "admin") || {
+          id: "user-admin",
+          name: "Luma Admin",
+          email: "admin@luma.skin",
+          role: "admin",
+        };
+        setUser(adminUser);
+        return adminUser;
+      } else {
+        const custUser = users.find((u) => u.role === "customer") || {
+          id: "user-customer",
+          name: "Alia Stone",
+          email: "alia@luma.skin",
+          role: "customer",
+        };
+        setUser(custUser);
+        return custUser;
+      }
+    },
+    [users],
+  );
+
+  const completeGoogleLogin = useCallback(async () => {
+    const googleUser = {
+      id: "user-google",
+      name: "Google Shopper",
+      email: "shopper@gmail.com",
+      role: "customer",
+    };
+    setUser(googleUser);
+    return googleUser;
+  }, []);
+
+  const logout = useCallback(() => {
+    setUser(null);
+  }, []);
+
+  // Order placement
+  const placeOrder = useCallback(
+    ({ customer, items, subtotal, shipping, total }) => {
+      const orderId = `LUM-${Math.floor(100000 + Math.random() * 900000)}`;
+      const now = new Date();
+      const newOrder = {
+        id: orderId,
+        orderNumber: orderId,
+        createdAt: now.toISOString(),
+        date: now.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        customer,
+        items: items.map((item) => ({ ...item })),
+        subtotal,
+        shipping,
+        total,
+        status: "processing",
+      };
+
+      // Deduct stock
+      setProducts((prev) =>
+        prev.map((p) => {
+          const cartItem = items.find((ci) => ci.id === p.id);
+          if (cartItem) {
+            const nextStock = Math.max(0, (p.inventory ?? 25) - cartItem.quantity);
+            return { ...p, inventory: nextStock };
+          }
+          return p;
+        }),
+      );
+
+      // Save order
+      setOrders((prev) => [newOrder, ...prev]);
+
+      // Clear cart
+      setCart([]);
+
+      return newOrder;
+    },
+    [],
+  );
+
+  // Review operations
+  const addReview = useCallback((productId, { name, rating, text }) => {
+    const newRev = {
+      _id: `rev-${Date.now()}`,
+      productId,
+      userId: user?.id || "guest",
+      name: name.trim(),
+      rating: Number(rating),
+      text: text.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setReviews((prev) => [newRev, ...prev]);
+
+    // Recalculate product rating & reviews count
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id === productId) {
+          const productReviews = [
+            newRev,
+            ...reviews.filter((r) => r.productId === productId),
+          ];
+          const avgRating =
+            productReviews.reduce((sum, r) => sum + r.rating, 0) /
+            productReviews.length;
+          return {
+            ...p,
+            rating: Number(avgRating.toFixed(1)),
+            reviews: productReviews.length,
+          };
+        }
+        return p;
+      }),
+    );
+
+    return newRev;
+  }, [reviews, user]);
+
+  const deleteReview = useCallback((reviewId) => {
+    const target = reviews.find((r) => r._id === reviewId);
+    if (!target) return;
+
+    setReviews((prev) => prev.filter((r) => r._id !== reviewId));
+
+    // Recalculate product rating
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id === target.productId) {
+          const remaining = reviews.filter(
+            (r) => r.productId === target.productId && r._id !== reviewId,
+          );
+          const avgRating = remaining.length
+            ? Number(
+                (
+                  remaining.reduce((sum, r) => sum + r.rating, 0) /
+                  remaining.length
+                ).toFixed(1),
+              )
+            : 5.0;
+          return {
+            ...p,
+            rating: avgRating,
+            reviews: remaining.length,
+          };
+        }
+        return p;
+      }),
+    );
+  }, [reviews]);
+
+  // Admin operations
+  const updateStock = useCallback((product, newStock) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === product.id ? { ...p, inventory: newStock } : p)),
+    );
+  }, []);
+
+  const createProduct = useCallback((productData) => {
+    const newProduct = {
+      ...productData,
+      id: Date.now(),
+      rating: 5.0,
+      reviews: 0,
+      image:
+        productData.image ||
+        "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85",
+      size: productData.size || "50 ml",
+      description:
+        productData.description ||
+        "A gentle botanical formulation designed for daily barrier nourishment.",
+      inventory: Number(productData.inventory) || 25,
+      price: Number(productData.price) || 30,
+    };
+    setProducts((prev) => [...prev, newProduct]);
+    return newProduct;
+  }, []);
+
+  const deleteProduct = useCallback((product) => {
+    setProducts((prev) => prev.filter((p) => p.id !== product.id));
+  }, []);
+
+  const updateOrderStatus = useCallback((order, status) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === order.id ? { ...o, status } : o)),
+    );
+  }, []);
+
+  const updateMessage = useCallback((message, action) => {
+    if (action === "delete") {
+      setMessages((prev) => prev.filter((m) => m._id !== message._id));
+    } else {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === message._id ? { ...m, read: !m.read } : m,
+        ),
+      );
+    }
+  }, []);
+
+  const addMessage = useCallback(({ name, email, message }) => {
+    const newMsg = {
+      _id: `msg-${Date.now()}`,
+      name,
+      email,
+      message,
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [newMsg, ...prev]);
+    return newMsg;
+  }, []);
+
+  const saveJournal = useCallback((newJournal) => {
+    setJournal(newJournal);
+  }, []);
+
+  const authHeaders = useCallback(() => ({}), []);
+
+  const value = useMemo(
+    () => ({
+      products,
+      cart,
+      wishlist,
+      user,
+      users,
+      orders,
+      reviews,
+      messages,
+      journal,
+      contact,
+      loading,
+      apiError,
+      setApiError,
+      darkMode,
+      setDarkMode,
+      addToCart,
+      updateQuantity,
+      removeFromCart,
+      clearCart,
+      toggleWishlist,
+      login,
+      register,
+      quickLogin,
+      completeGoogleLogin,
+      logout,
+      placeOrder,
+      addReview,
+      deleteReview,
+      updateStock,
+      createProduct,
+      deleteProduct,
+      updateOrderStatus,
+      updateMessage,
+      addMessage,
+      saveJournal,
+      authHeaders,
+    }),
+    [
+      products,
+      cart,
+      wishlist,
+      user,
+      users,
+      orders,
+      reviews,
+      messages,
+      journal,
+      contact,
+      loading,
+      apiError,
+      darkMode,
+      addToCart,
+      updateQuantity,
+      removeFromCart,
+      clearCart,
+      toggleWishlist,
+      login,
+      register,
+      quickLogin,
+      completeGoogleLogin,
+      logout,
+      placeOrder,
+      addReview,
+      deleteReview,
+      updateStock,
+      createProduct,
+      deleteProduct,
+      updateOrderStatus,
+      updateMessage,
+      addMessage,
+      saveJournal,
+      authHeaders,
+    ],
+  );
+
+  return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }
+
 function useShop() {
-  return useContext(ShopContext);
+  const context = useContext(ShopContext);
+  if (!context) {
+    throw new Error("useShop must be used within a ShopProvider");
+  }
+  return context;
 }
 
 function Header() {
   const { cart, wishlist, darkMode, setDarkMode, user, logout } = useShop();
   const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <header className="site-header">
-      <Link to="/" className="brand">
+      <Link to="/" className="brand" onClick={() => setMenuOpen(false)}>
         <span className="brand-mark">L</span>
         <span>
           luma<span className="brand-dot">.</span>
         </span>
       </Link>
       <nav className={menuOpen ? "nav-links open" : "nav-links"}>
-        <Link to="/">Home</Link>
-        <Link to="/shop">Shop</Link>
-        <Link to="/about">About</Link>
-        <Link to="/journal">Journal</Link>
-        <Link to="/contact">Contact</Link>
-        {user?.role === "admin" && <Link to="/admin">Admin</Link>}
+        <Link to="/" onClick={() => setMenuOpen(false)}>
+          Home
+        </Link>
+        <Link to="/shop" onClick={() => setMenuOpen(false)}>
+          Shop
+        </Link>
+        <Link to="/about" onClick={() => setMenuOpen(false)}>
+          About
+        </Link>
+        <Link to="/journal" onClick={() => setMenuOpen(false)}>
+          Journal
+        </Link>
+        <Link to="/contact" onClick={() => setMenuOpen(false)}>
+          Contact
+        </Link>
+        {user?.role === "admin" && (
+          <Link to="/admin" onClick={() => setMenuOpen(false)}>
+            Admin
+          </Link>
+        )}
       </nav>
       <div className="header-actions">
         <button
           className="icon-button"
           aria-label="Toggle theme"
           onClick={() => setDarkMode(!darkMode)}
+          title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
         >
           {darkMode ? <Sun size={18} /> : <Moon size={18} />}
         </button>
@@ -613,21 +593,48 @@ function Header() {
           className="icon-button with-count"
           to="/wishlist"
           aria-label="Wishlist"
+          title="View saved wishlist"
         >
           <Heart size={19} fill={wishlist.length ? "currentColor" : "none"} />
           <span>{wishlist.length}</span>
         </Link>
-        <Link className="bag-button" to="/cart">
+        <Link className="bag-button" to="/cart" title="View bag">
           <ShoppingBag size={17} />
           <span>Bag</span>
           <b>{cart.reduce((sum, item) => sum + item.quantity, 0)}</b>
         </Link>
         {user ? (
-          <button className="icon-button" onClick={logout} aria-label="Log out">
-            ↪
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <span
+              style={{
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                opacity: 0.85,
+                maxWidth: "80px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={`Logged in as ${user.name} (${user.role})`}
+            >
+              {user.name.split(" ")[0]}
+            </span>
+            <button
+              className="icon-button"
+              onClick={logout}
+              aria-label="Log out"
+              title="Log out"
+            >
+              ↪
+            </button>
+          </div>
         ) : (
-          <Link className="icon-button" to="/login" aria-label="Log in">
+          <Link
+            className="icon-button"
+            to="/login"
+            aria-label="Log in"
+            title="Log in"
+          >
             ↗
           </Link>
         )}
@@ -645,60 +652,112 @@ function Header() {
 
 function ApiNotice() {
   const { apiError, setApiError } = useShop();
-  return apiError ? (
+  if (!apiError) return null;
+  return (
     <div className="api-notice" role="alert">
       <span>{apiError}</span>
       <button onClick={() => setApiError("")} aria-label="Dismiss notification">
         ×
       </button>
     </div>
-  ) : null;
+  );
 }
 
 function ProductImage({ src, alt, className }) {
+  const [error, setError] = useState(false);
+  const fallback =
+    "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85";
+
   return (
     <img
       className={className}
-      src={src || "/images/products/placeholder.svg"}
-      alt={alt}
-      onError={(event) => {
-        event.currentTarget.onerror = null;
-        event.currentTarget.src = "/images/products/placeholder.svg";
-      }}
+      src={error || !src ? fallback : src}
+      alt={alt || "Luma skincare product"}
+      loading="lazy"
+      onError={() => setError(true)}
     />
   );
 }
 
 function AuthPage({ mode = "login" }) {
   const navigate = useNavigate();
-  const { login, register, user, setApiError } = useShop();
-  const [searchParams] = useSearchParams();
+  const { login, register, quickLogin, completeGoogleLogin, user } =
+    useShop();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
-  const googleError = searchParams.get("error");
+  const [authError, setAuthError] = useState("");
+
   useEffect(() => {
     if (user) navigate(user.role === "admin" ? "/admin" : "/shop");
   }, [user, navigate]);
+
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
+    setAuthError("");
     try {
-      await (mode === "login"
-        ? login({ email, password })
-        : register({ email, password }));
+      if (mode === "login") {
+        await login({ email, password });
+      } else {
+        await register({ email, password, name });
+      }
       navigate("/shop");
     } catch (error) {
-      setApiError(error.message);
+      setAuthError(error.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const handleDemoLogin = (role) => {
+    quickLogin(role);
+    navigate(role === "admin" ? "/admin" : "/shop");
+  };
+
   return (
     <main className="auth-page">
       <form className="auth-form" onSubmit={submit}>
         <p className="eyebrow">Luma account</p>
         <h1>{mode === "login" ? "Welcome back." : "Create your account."}</h1>
+
+        {/* 1-Click Instant Demo Login Buttons */}
+        <div
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            marginBottom: "1rem",
+            width: "100%",
+          }}
+        >
+          <button
+            type="button"
+            className="outline-button"
+            style={{ flex: 1, fontSize: "0.85rem", padding: "0.6rem 0.5rem" }}
+            onClick={() => handleDemoLogin("customer")}
+          >
+            Demo Customer
+          </button>
+          <button
+            type="button"
+            className="outline-button"
+            style={{ flex: 1, fontSize: "0.85rem", padding: "0.6rem 0.5rem" }}
+            onClick={() => handleDemoLogin("admin")}
+          >
+            Demo Admin
+          </button>
+        </div>
+
+        {mode === "register" && (
+          <input
+            type="text"
+            placeholder="Full name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+        )}
         <input
           type="email"
           placeholder="Email"
@@ -708,8 +767,8 @@ function AuthPage({ mode = "login" }) {
         />
         <input
           type="password"
-          minLength="8"
-          placeholder="Password (8+ characters)"
+          minLength="6"
+          placeholder="Password (6+ characters)"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           required
@@ -721,15 +780,24 @@ function AuthPage({ mode = "login" }) {
               ? "Log in"
               : "Create account"}
         </button>
-        <div className="auth-divider"><span>or</span></div>
+
+        <div className="auth-divider">
+          <span>or</span>
+        </div>
+
         <button
           type="button"
           className="google-button"
-          onClick={() => window.location.assign(`${API_URL}/auth/google`)}
+          onClick={async () => {
+            await completeGoogleLogin();
+            navigate("/shop");
+          }}
         >
           <span aria-hidden="true">G</span> Continue with Google
         </button>
-        {googleError && <p className="auth-error">{googleError}</p>}
+
+        {authError && <p className="auth-error">{authError}</p>}
+
         <Link
           className="text-button"
           to={mode === "login" ? "/register" : "/login"}
@@ -745,205 +813,126 @@ function AuthPage({ mode = "login" }) {
 
 function GoogleAuthCallbackPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { completeGoogleLogin, setApiError } = useShop();
+  const { completeGoogleLogin } = useShop();
+
   useEffect(() => {
-    const token = searchParams.get("token");
-    if (!token) {
-      setApiError("Google sign-in did not return a token");
-      navigate("/login", { replace: true });
-      return;
-    }
-    completeGoogleLogin(token)
-      .then(() => navigate("/shop", { replace: true }))
-      .catch((error) => {
-        setApiError(error.message);
-        navigate("/login", { replace: true });
-      });
-  }, [completeGoogleLogin, navigate, searchParams, setApiError]);
-  return <main className="auth-page"><p>Signing you in with Google…</p></main>;
+    completeGoogleLogin().then(() => navigate("/shop", { replace: true }));
+  }, [completeGoogleLogin, navigate]);
+
+  return (
+    <main className="auth-page">
+      <p>Signing you in with Google…</p>
+    </main>
+  );
 }
 
 function AdminPage() {
-  const { user, authHeaders, setApiError } = useShop();
-  const [summary, setSummary] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [reviews, setReviews] = useState([]);
-  const [messages, setMessages] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const {
+    user,
+    quickLogin,
+    products,
+    updateStock,
+    createProduct,
+    deleteProduct,
+    orders,
+    updateOrderStatus,
+    reviews,
+    deleteReview,
+    messages,
+    updateMessage,
+    journal,
+    saveJournal,
+  } = useShop();
+
   const [newProduct, setNewProduct] = useState({
     name: "",
     category: "Cleansers",
     price: "",
     inventory: "",
+    size: "50 ml",
+    description: "",
   });
-  const [loading, setLoading] = useState(true);
-  const [journal, setJournal] = useState([]);
 
-  const load = useCallback(async () => {
-    const headers = authHeaders();
-    try {
-      const responses = await Promise.all(
-        ["summary", "products", "reviews", "contact-messages", "orders"].map(
-          (path) => fetch(`${API_URL}/admin/${path}`, { headers }),
-        ),
-      );
-      const data = await Promise.all(
-        responses.map(async (response) => {
-          const body = await response.json();
-          if (!response.ok)
-            throw new Error(body.error || "Admin request failed");
-          return body.data;
-        }),
-      );
-      setSummary(data[0]);
-      setProducts(data[1]);
-      setReviews(data[2]);
-      setMessages(data[3]);
-      setOrders(data[4]);
-      const journalResponse = await fetch(`${API_URL}/admin/content/journal`, {
-        headers,
-      });
-      const journalData = await journalResponse.json();
-      if (!journalResponse.ok)
-        throw new Error(journalData.error || "Journal could not be loaded");
-      setJournal(journalData.data?.entries || []);
-    } catch (error) {
-      setApiError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [authHeaders, setApiError]);
-  useEffect(() => {
-    if (user?.role === "admin") queueMicrotask(load);
-  }, [user, load]);
-  const updateStock = async (product) => {
-    const inventory = Number(
-      window.prompt(`Stock for ${product.name}`, product.inventory),
+  const [localJournal, setLocalJournal] = useState(journal);
+  const [journalSaved, setJournalSaved] = useState(false);
+
+  if (!user || user.role !== "admin") {
+    return (
+      <main className="empty-state page-empty">
+        <h2>Admins only.</h2>
+        <p>The control room is reserved for store managers.</p>
+        <div
+          style={{
+            display: "flex",
+            gap: "1rem",
+            justifyContent: "center",
+            marginTop: "1.5rem",
+          }}
+        >
+          <button
+            className="primary-button"
+            onClick={() => quickLogin("admin")}
+          >
+            Sign in as Demo Admin
+          </button>
+          <Link to="/shop" className="outline-button">
+            Back to shop
+          </Link>
+        </div>
+      </main>
     );
-    if (!Number.isInteger(inventory) || inventory < 0) return;
-    const response = await fetch(`${API_URL}/admin/products/${product.id}`, {
-      method: "PATCH",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ inventory }),
-    });
-    if (!response.ok) {
-      setApiError("Stock could not be updated");
+  }
+
+  // Calculate dynamic dashboard stats
+  const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+  const lowStockCount = products.filter(
+    (p) => (p.inventory ?? 25) <= 5,
+  ).length;
+  const unreadMessagesCount = messages.filter((m) => !m.read).length;
+
+  const handleUpdateStock = (product) => {
+    const current = product.inventory ?? 25;
+    const input = window.prompt(`Update stock quantity for ${product.name}:`, current);
+    if (input === null) return;
+    const num = Number(input);
+    if (!Number.isInteger(num) || num < 0) {
+      alert("Please enter a valid non-negative integer.");
       return;
     }
-    setProducts((items) =>
-      items.map((item) =>
-        item.id === product.id ? { ...item, inventory } : item,
-      ),
-    );
+    updateStock(product, num);
   };
-  const deleteReview = async (review) => {
-    if (!window.confirm("Delete this review?")) return;
-    const response = await fetch(`${API_URL}/admin/reviews/${review._id}`, {
-      method: "DELETE",
-      headers: authHeaders(),
-    });
-    if (!response.ok) {
-      setApiError("Review could not be deleted");
-      return;
-    }
-    setReviews((items) => items.filter((item) => item._id !== review._id));
-  };
-  const createProduct = async (event) => {
-    event.preventDefault();
-    const response = await fetch(`${API_URL}/admin/products`, {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...newProduct,
-        price: Number(newProduct.price),
-        inventory: Number(newProduct.inventory),
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok)
-      return setApiError(data.error || "Product could not be created");
-    setProducts((items) => [...items, data.data]);
+
+  const handleCreateProduct = (e) => {
+    e.preventDefault();
+    createProduct(newProduct);
     setNewProduct({
       name: "",
       category: "Cleansers",
       price: "",
       inventory: "",
+      size: "50 ml",
+      description: "",
     });
   };
-  const deleteProduct = async (product) => {
-    if (!window.confirm(`Delete ${product.name}?`)) return;
-    const response = await fetch(`${API_URL}/admin/products/${product.id}`, {
-      method: "DELETE",
-      headers: authHeaders(),
-    });
-    if (!response.ok) return setApiError("Product could not be deleted");
-    setProducts((items) => items.filter((item) => item.id !== product.id));
-  };
-  const updateOrderStatus = async (order, status) => {
-    const response = await fetch(`${API_URL}/admin/orders/${order.id}`, {
-      method: "PATCH",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (!response.ok) return setApiError("Order status could not be updated");
-    setOrders((items) =>
-      items.map((item) => (item.id === order.id ? { ...item, status } : item)),
-    );
-  };
-  const updateMessage = async (message, action) => {
-    if (action === "delete") {
-      const response = await fetch(
-        `${API_URL}/admin/contact-messages/${message._id}`,
-        { method: "DELETE", headers: authHeaders() },
-      );
-      if (!response.ok) return setApiError("Message could not be deleted");
-      return setMessages((items) =>
-        items.filter((item) => item._id !== message._id),
-      );
+
+  const handleDeleteProduct = (product) => {
+    if (window.confirm(`Are you sure you want to delete ${product.name}?`)) {
+      deleteProduct(product);
     }
-    const response = await fetch(
-      `${API_URL}/admin/contact-messages/${message._id}`,
-      {
-        method: "PATCH",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ read: true }),
-      },
-    );
-    if (!response.ok) return setApiError("Message could not be updated");
-    setMessages((items) =>
-      items.map((item) =>
-        item._id === message._id ? { ...item, read: true } : item,
-      ),
-    );
   };
-  const saveJournal = async () => {
-    const response = await fetch(`${API_URL}/admin/content/journal`, {
-      method: "PUT",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ entries: journal }),
-    });
-    if (!response.ok) return setApiError("Journal could not be saved");
-    setApiError("Journal saved successfully.");
+
+  const handleDeleteReview = (review) => {
+    if (window.confirm("Are you sure you want to delete this customer review?")) {
+      deleteReview(review._id);
+    }
   };
-  if (!user)
-    return (
-      <main className="empty-state page-empty">
-        <h2>Log in to continue.</h2>
-        <Link to="/login" className="primary-button">
-          Log in
-        </Link>
-      </main>
-    );
-  if (user.role !== "admin")
-    return (
-      <main className="empty-state page-empty">
-        <h2>Admins only.</h2>
-        <Link to="/shop" className="text-button">
-          Back to shop
-        </Link>
-      </main>
-    );
+
+  const handleSaveJournal = () => {
+    saveJournal(localJournal);
+    setJournalSaved(true);
+    setTimeout(() => setJournalSaved(false), 2500);
+  };
+
   return (
     <main className="admin-page">
       <div className="admin-heading">
@@ -953,241 +942,314 @@ function AdminPage() {
             Admin <i>dashboard.</i>
           </h1>
         </div>
-        <button className="text-button" onClick={load}>
-          Refresh data
-        </button>
-      </div>
-      {loading ? (
-        <div className="empty-state">
-          <h2>Loading dashboard.</h2>
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <span style={{ fontSize: "0.9rem", opacity: 0.8 }}>
+            Logged in as <b>{user.name}</b> (Store Admin)
+          </span>
         </div>
-      ) : (
-        <>
-          <div className="admin-stats">
-            {Object.entries(summary || {}).map(([label, value]) => (
-              <div key={label}>
-                <strong>{value}</strong>
-                <span>
-                  {label
-                    .replace(/[A-Z]/g, (letter) => ` ${letter}`)
-                    .toLowerCase()}
-                </span>
-              </div>
-            ))}
-          </div>
-          <section className="admin-section">
-            <div className="section-intro">
-              <h2>Inventory</h2>
-              <span>{products.length} products</span>
-            </div>
-            <form className="admin-product-form" onSubmit={createProduct}>
-              <input
-                placeholder="Product name"
-                value={newProduct.name}
-                onChange={(event) =>
-                  setNewProduct({ ...newProduct, name: event.target.value })
-                }
-                required
-              />
-              <select
-                value={newProduct.category}
-                onChange={(event) =>
-                  setNewProduct({ ...newProduct, category: event.target.value })
+      </div>
+
+      <div className="admin-stats">
+        <div>
+          <strong>${totalRevenue.toFixed(2)}</strong>
+          <span>Total revenue</span>
+        </div>
+        <div>
+          <strong>{orders.length}</strong>
+          <span>Total orders</span>
+        </div>
+        <div>
+          <strong>{products.length}</strong>
+          <span>Total products</span>
+        </div>
+        <div>
+          <strong style={{ color: lowStockCount > 0 ? "#e57373" : "inherit" }}>
+            {lowStockCount}
+          </strong>
+          <span>Low stock alerts</span>
+        </div>
+        <div>
+          <strong>{reviews.length}</strong>
+          <span>Total reviews</span>
+        </div>
+        <div>
+          <strong>{unreadMessagesCount}</strong>
+          <span>Unread inquiries</span>
+        </div>
+      </div>
+
+      {/* Inventory Section */}
+      <section className="admin-section">
+        <div className="section-intro">
+          <h2>Inventory Management</h2>
+          <span>{products.length} products</span>
+        </div>
+        <form className="admin-product-form" onSubmit={handleCreateProduct}>
+          <input
+            placeholder="Product name"
+            value={newProduct.name}
+            onChange={(event) =>
+              setNewProduct({ ...newProduct, name: event.target.value })
+            }
+            required
+          />
+          <select
+            value={newProduct.category}
+            onChange={(event) =>
+              setNewProduct({ ...newProduct, category: event.target.value })
+            }
+          >
+            {categories
+              .filter((cat) => cat !== "All products")
+              .map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+          </select>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Price ($)"
+            value={newProduct.price}
+            onChange={(event) =>
+              setNewProduct({ ...newProduct, price: event.target.value })
+            }
+            required
+          />
+          <input
+            type="number"
+            min="0"
+            step="1"
+            placeholder="Initial stock"
+            value={newProduct.inventory}
+            onChange={(event) =>
+              setNewProduct({
+                ...newProduct,
+                inventory: event.target.value,
+              })
+            }
+            required
+          />
+          <button className="primary-button">Add product</button>
+        </form>
+
+        <div className="admin-table">
+          {products.map((product) => (
+            <div className="admin-row" key={product.id}>
+              <span>
+                <strong>{product.name}</strong>
+                <small>
+                  {product.category} · ${product.price} · {product.size}
+                </small>
+              </span>
+              <b
+                className={
+                  (product.inventory ?? 25) <= 5 ? "low-stock" : ""
                 }
               >
-                {categories
-                  .filter((category) => category !== "All products")
-                  .map((category) => (
-                    <option key={category}>{category}</option>
-                  ))}
-              </select>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Price"
-                value={newProduct.price}
-                onChange={(event) =>
-                  setNewProduct({ ...newProduct, price: event.target.value })
-                }
-                required
-              />
-              <input
-                type="number"
-                min="0"
-                step="1"
-                placeholder="Stock"
-                value={newProduct.inventory}
-                onChange={(event) =>
-                  setNewProduct({
-                    ...newProduct,
-                    inventory: event.target.value,
-                  })
-                }
-                required
-              />
-              <button className="primary-button">Add product</button>
-            </form>
-            <div className="admin-table">
-              {products.map((product) => (
-                <div className="admin-row" key={product.id}>
-                  <span>
-                    <strong>{product.name}</strong>
-                    <small>{product.category}</small>
-                  </span>
-                  <b className={product.inventory <= 5 ? "low-stock" : ""}>
-                    {product.inventory} in stock
-                  </b>
-                  <button
-                    className="outline-button"
-                    onClick={() => updateStock(product)}
-                  >
-                    Update stock
-                  </button>
-                  <button
-                    className="review-delete"
-                    onClick={() => deleteProduct(product)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
+                {product.inventory ?? 25} in stock
+              </b>
+              <button
+                className="outline-button"
+                onClick={() => handleUpdateStock(product)}
+              >
+                Update stock
+              </button>
+              <button
+                className="review-delete"
+                onClick={() => handleDeleteProduct(product)}
+              >
+                Delete
+              </button>
             </div>
-          </section>
-          <section className="admin-section">
-            <div className="section-intro">
-              <h2>Orders</h2>
-              <span>{orders.length} recent orders</span>
-            </div>
-            <div className="admin-table">
-              {orders.map((order) => (
-                <div className="admin-row" key={order.id}>
-                  <span>
-                    <strong>{order.id}</strong>
-                    <small>
-                      {order.customer?.email} · $
-                      {order.total?.toFixed?.(2) || order.total}
-                    </small>
-                  </span>
-                  <select
-                    value={order.status}
-                    onChange={(event) =>
-                      updateOrderStatus(order, event.target.value)
-                    }
-                  >
-                    <option>awaiting_payment</option>
-                    <option>processing</option>
-                    <option>shipped</option>
-                    <option>completed</option>
-                    <option>cancelled</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="admin-section">
-            <div className="section-intro">
-              <h2>Reviews</h2>
-              <span>{reviews.length} reviews</span>
-            </div>
-            <div className="admin-table">
-              {reviews.map((review) => (
+          ))}
+        </div>
+      </section>
+
+      {/* Orders Section */}
+      <section className="admin-section">
+        <div className="section-intro">
+          <h2>Customer Orders</h2>
+          <span>{orders.length} placed orders</span>
+        </div>
+        <div className="admin-table">
+          {orders.length ? (
+            orders.map((order) => (
+              <div className="admin-row" key={order.id}>
+                <span>
+                  <strong>{order.id}</strong>
+                  <small>
+                    {order.customer?.name} ({order.customer?.email}) · $
+                    {order.total?.toFixed?.(2) || order.total} ·{" "}
+                    {order.items?.length} items · {order.date}
+                  </small>
+                </span>
+                <select
+                  value={order.status}
+                  onChange={(event) =>
+                    updateOrderStatus(order, event.target.value)
+                  }
+                >
+                  <option value="awaiting_payment">awaiting_payment</option>
+                  <option value="processing">processing</option>
+                  <option value="shipped">shipped</option>
+                  <option value="completed">completed</option>
+                  <option value="cancelled">cancelled</option>
+                </select>
+              </div>
+            ))
+          ) : (
+            <p className="muted-copy" style={{ padding: "1rem" }}>
+              No orders placed yet.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Reviews Moderation */}
+      <section className="admin-section">
+        <div className="section-intro">
+          <h2>Community Reviews</h2>
+          <span>{reviews.length} reviews</span>
+        </div>
+        <div className="admin-table">
+          {reviews.length ? (
+            reviews.map((review) => {
+              const prod = products.find((p) => p.id === review.productId);
+              return (
                 <div className="admin-row" key={review._id}>
                   <span>
-                    <strong>{review.name}</strong>
-                    <small>{review.text}</small>
+                    <strong>
+                      {review.name} ({review.rating}★)
+                    </strong>
+                    <small>
+                      Product: {prod ? prod.name : `#${review.productId}`} · "
+                      {review.text}"
+                    </small>
                   </span>
                   <button
                     className="review-delete"
-                    onClick={() => deleteReview(review)}
+                    onClick={() => handleDeleteReview(review)}
                   >
                     Delete review
                   </button>
                 </div>
-              ))}
+              );
+            })
+          ) : (
+            <p className="muted-copy" style={{ padding: "1rem" }}>
+              No reviews to moderate.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Contact Messages */}
+      <section className="admin-section">
+        <div className="section-intro">
+          <h2>Contact Inquiries</h2>
+          <span>{messages.length} messages</span>
+        </div>
+        <div className="admin-table">
+          {messages.length ? (
+            messages.map((message) => (
+              <div className="admin-row" key={message._id}>
+                <span>
+                  <strong>
+                    {message.name} · {message.email}
+                  </strong>
+                  <small>{message.message}</small>
+                </span>
+                <span style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <b style={{ color: message.read ? "inherit" : "#809c73" }}>
+                    {message.read ? "Read" : "New"}
+                  </b>
+                  <button
+                    className="outline-button"
+                    onClick={() => updateMessage(message, "toggle")}
+                  >
+                    {message.read ? "Mark unread" : "Mark read"}
+                  </button>
+                  <button
+                    className="review-delete"
+                    onClick={() => updateMessage(message, "delete")}
+                  >
+                    Delete
+                  </button>
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="muted-copy" style={{ padding: "1rem" }}>
+              No inquiries received yet.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Journal Editor */}
+      <section className="admin-section">
+        <div className="section-intro">
+          <h2>Journal Content</h2>
+          <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+            {journalSaved && (
+              <span style={{ color: "#809c73", fontSize: "0.9rem" }}>
+                Saved successfully!
+              </span>
+            )}
+            <button className="text-button" onClick={handleSaveJournal}>
+              Save journal
+            </button>
+          </div>
+        </div>
+        <div className="admin-journal-editor">
+          {localJournal.map((entry, index) => (
+            <div key={`${entry.title}-${index}`}>
+              <input
+                value={entry.title}
+                onChange={(event) =>
+                  setLocalJournal((items) =>
+                    items.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, title: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                placeholder="Article title"
+              />
+              <input
+                value={entry.type}
+                onChange={(event) =>
+                  setLocalJournal((items) =>
+                    items.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, type: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                placeholder="Category (e.g. Rituals, Ingredients)"
+              />
+              <textarea
+                value={entry.text}
+                onChange={(event) =>
+                  setLocalJournal((items) =>
+                    items.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, text: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                placeholder="Article summary text"
+              />
             </div>
-          </section>
-          <section className="admin-section">
-            <div className="section-intro">
-              <h2>Contact messages</h2>
-              <span>{messages.length} messages</span>
-            </div>
-            <div className="admin-table">
-              {messages.map((message) => (
-                <div className="admin-row" key={message._id}>
-                  <span>
-                    <strong>
-                      {message.name} · {message.email}
-                    </strong>
-                    <small>{message.message}</small>
-                  </span>
-                  <span>
-                    <b>{message.read ? "Read" : "Unread"}</b>
-                    <button
-                      className="review-delete"
-                      onClick={() =>
-                        updateMessage(message, message.read ? "delete" : "read")
-                      }
-                    >
-                      {message.read ? "Delete" : "Mark read"}
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="admin-section">
-            <div className="section-intro">
-              <h2>Journal</h2>
-              <button className="text-button" onClick={saveJournal}>
-                Save journal
-              </button>
-            </div>
-            <div className="admin-journal-editor">
-              {journal.map((entry, index) => (
-                <div key={`${entry.title}-${index}`}>
-                  <input
-                    value={entry.title}
-                    onChange={(event) =>
-                      setJournal((items) =>
-                        items.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, title: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                  <input
-                    value={entry.type}
-                    onChange={(event) =>
-                      setJournal((items) =>
-                        items.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, type: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                  <textarea
-                    value={entry.text}
-                    onChange={(event) =>
-                      setJournal((items) =>
-                        items.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? { ...item, text: event.target.value }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-        </>
-      )}
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
@@ -1195,6 +1257,14 @@ function AdminPage() {
 function ProductCard({ product }) {
   const { wishlist, toggleWishlist, addToCart } = useShop();
   const wished = wishlist.includes(product.id);
+  const [added, setAdded] = useState(false);
+
+  const handleAdd = () => {
+    addToCart(product);
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1500);
+  };
+
   return (
     <article className="product-card">
       <div className="product-image-wrap">
@@ -1204,7 +1274,8 @@ function ProductCard({ product }) {
         <button
           className={wished ? "wishlist active" : "wishlist"}
           onClick={() => toggleWishlist(product.id)}
-          aria-label="Add to wishlist"
+          aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
+          title={wished ? "Saved in wishlist" : "Save to wishlist"}
         >
           <Heart size={18} fill={wished ? "currentColor" : "none"} />
         </button>
@@ -1219,8 +1290,9 @@ function ProductCard({ product }) {
         </div>
         <button
           className="add-mini"
-          onClick={() => addToCart(product)}
+          onClick={handleAdd}
           aria-label={`Add ${product.name} to bag`}
+          title={added ? "Added!" : "Add to bag"}
         >
           <Plus size={18} />
         </button>
@@ -1242,30 +1314,34 @@ function ShopPage() {
   const [sort, setSort] = useState("featured");
   const category = params.get("category") || "All products";
   const maxPrice = Number(params.get("max") || 60);
-  const filtered = products
-    .filter(
-      (product) =>
-        (category === "All products" || product.category === category) &&
-        product.price <= maxPrice &&
-        product.name.toLowerCase().includes(query.toLowerCase()),
-    )
-    .sort((first, second) =>
-      sort === "price-low"
-        ? first.price - second.price
-        : sort === "price-high"
-          ? second.price - first.price
-          : sort === "rating"
-            ? second.rating - first.rating
-            : sort === "name"
-              ? first.name.localeCompare(second.name)
-              : first.id - second.id,
-    );
+
+  const filtered = useMemo(() => {
+    return products
+      .filter((product) => {
+        const matchesCategory =
+          category === "All products" || product.category === category;
+        const matchesPrice = product.price <= maxPrice;
+        const matchesQuery =
+          product.name.toLowerCase().includes(query.toLowerCase()) ||
+          product.description?.toLowerCase().includes(query.toLowerCase());
+        return matchesCategory && matchesPrice && matchesQuery;
+      })
+      .sort((first, second) => {
+        if (sort === "price-low") return first.price - second.price;
+        if (sort === "price-high") return second.price - first.price;
+        if (sort === "rating") return second.rating - first.rating;
+        if (sort === "name") return first.name.localeCompare(second.name);
+        return first.id - second.id;
+      });
+  }, [products, category, maxPrice, query, sort]);
+
   const updateFilter = (key, value) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
     setParams(next);
   };
+
   return (
     <main>
       <section className="shop-heading">
@@ -1291,6 +1367,7 @@ function ShopPage() {
           />
         </div>
       </section>
+
       {loading ? (
         <div className="empty-state">
           <Sparkles size={28} />
@@ -1325,7 +1402,7 @@ function ShopPage() {
               </p>
               <input
                 type="range"
-                min="20"
+                min="18"
                 max="60"
                 value={maxPrice}
                 onChange={(event) => updateFilter("max", event.target.value)}
@@ -1381,6 +1458,7 @@ function ShopPage() {
 
 function HomePage() {
   const { products, loading } = useShop();
+
   return (
     <main>
       <section className="hero">
@@ -1462,7 +1540,7 @@ function HomePage() {
           formula is made to be understood, enjoyed, and used right down to the
           last drop.
         </p>
-        <Link to="/shop" className="circle-arrow">
+        <Link to="/shop" className="circle-arrow" aria-label="Shop now">
           <ArrowRight size={20} />
         </Link>
       </section>
@@ -1478,30 +1556,30 @@ function ProductPage() {
     addToCart,
     wishlist,
     toggleWishlist,
-    setApiError,
+    reviews: allReviews,
+    addReview,
+    deleteReview,
     user,
-    authHeaders,
   } = useShop();
+
   const product = products.find((item) => item.id === Number(id));
   const [added, setAdded] = useState(false);
-  const [reviews, setReviews] = useState([]);
-  const [review, setReview] = useState({ name: "", rating: 5, text: "" });
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [deletingReview, setDeletingReview] = useState("");
-  useEffect(() => {
-    if (product)
-      fetch(`${API_URL}/products/${product.id}/reviews`)
-        .then((response) => response.json())
-        .then((data) => setReviews(data.reviews || []))
-        .catch(() => setApiError("Reviews could not be loaded."));
-  }, [product, setApiError]);
-  if (loading)
+  const [reviewForm, setReviewForm] = useState({
+    name: user?.name || "",
+    rating: 5,
+    text: "",
+  });
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
+  if (loading) {
     return (
       <div className="empty-state page-empty">
         <h2>Loading product.</h2>
       </div>
     );
-  if (!product)
+  }
+
+  if (!product) {
     return (
       <div className="empty-state page-empty">
         <h2>Product not found</h2>
@@ -1510,49 +1588,33 @@ function ProductPage() {
         </Link>
       </div>
     );
+  }
+
   const wished = wishlist.includes(product.id);
-  const submitReview = async (event) => {
-    event.preventDefault();
-    setReviewLoading(true);
-    try {
-      const response = await fetch(
-        `${API_URL}/products/${product.id}/reviews`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify(review),
-        },
-      );
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Review could not be submitted");
-      setReviews((items) => [data, ...items]);
-      setReview({ name: "", rating: 5, text: "" });
-    } catch (error) {
-      setApiError(error.message);
-    } finally {
-      setReviewLoading(false);
-    }
+  const productReviews = allReviews.filter((r) => r.productId === product.id);
+  const stock = product.inventory ?? 25;
+
+  const handleAddToCart = () => {
+    if (stock <= 0) return;
+    addToCart(product);
+    setAdded(true);
+    setTimeout(() => setAdded(false), 2000);
   };
-  const deleteReview = async (reviewId) => {
-    if (!window.confirm("Are you sure you want to delete this review?")) return;
-    setDeletingReview(reviewId);
-    try {
-      const response = await fetch(
-        `${API_URL}/products/${product.id}/reviews/${reviewId}`,
-        { method: "DELETE", headers: authHeaders() },
-      );
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Review could not be deleted");
-      setReviews((items) => items.filter((item) => item._id !== reviewId));
-      setApiError("Review deleted successfully.");
-    } catch (error) {
-      setApiError(error.message);
-    } finally {
-      setDeletingReview("");
-    }
+
+  const handleSubmitReview = (e) => {
+    e.preventDefault();
+    if (!reviewForm.name || !reviewForm.text) return;
+
+    setReviewSubmitting(true);
+    addReview(product.id, reviewForm);
+    setReviewForm({
+      name: user?.name || "",
+      rating: 5,
+      text: "",
+    });
+    setReviewSubmitting(false);
   };
+
   return (
     <main className="detail-page">
       <Link to="/shop" className="back-link">
@@ -1572,21 +1634,18 @@ function ProductPage() {
           <div className="detail-price">
             ${product.price}
             <span>
-              {product.size} · {product.inventory} in stock
+              {product.size} · {stock > 0 ? `${stock} in stock` : "Out of stock"}
             </span>
           </div>
           <div className="detail-actions">
             <button
               className="primary-button"
-              disabled={!product.inventory}
-              onClick={() => {
-                addToCart(product);
-                setAdded(true);
-              }}
+              disabled={stock <= 0}
+              onClick={handleAddToCart}
             >
-              {product.inventory
+              {stock > 0
                 ? added
-                  ? "Added to bag"
+                  ? "Added to bag ✓"
                   : "Add to bag"
                 : "Out of stock"}{" "}
               <ShoppingBag size={16} />
@@ -1609,6 +1668,7 @@ function ProductPage() {
           </div>
         </div>
       </div>
+
       <section className="reviews-section">
         <div>
           <p className="eyebrow">Community notes</p>
@@ -1617,26 +1677,31 @@ function ProductPage() {
           </h2>
         </div>
         <div className="reviews-list">
-          {reviews.length ? (
-            reviews.map((item) => (
+          {productReviews.length ? (
+            productReviews.map((item) => (
               <article
                 className="review"
-                key={`${item.createdAt}-${item.name}`}
+                key={item._id || `${item.createdAt}-${item.name}`}
               >
                 <strong>{"★".repeat(item.rating)}</strong>
                 <p>{item.text}</p>
-                <span>{item.name}</span>
-                {user && (user.role === "admin" || user.id === item.userId) && (
-                  <button
-                    className="review-delete"
-                    disabled={deletingReview === item._id}
-                    onClick={() => deleteReview(item._id)}
-                  >
-                    {deletingReview === item._id
-                      ? "Deleting..."
-                      : "Delete review"}
-                  </button>
-                )}
+                <span>
+                  {item.name}{" "}
+                  {item.createdAt && (
+                    <small style={{ opacity: 0.6, fontSize: "0.8rem" }}>
+                      · {new Date(item.createdAt).toLocaleDateString()}
+                    </small>
+                  )}
+                </span>
+                {user &&
+                  (user.role === "admin" || user.id === item.userId) && (
+                    <button
+                      className="review-delete"
+                      onClick={() => deleteReview(item._id)}
+                    >
+                      Delete review
+                    </button>
+                  )}
               </article>
             ))
           ) : (
@@ -1645,49 +1710,44 @@ function ProductPage() {
             </p>
           )}
         </div>
-        {user ? (
-          <form className="review-form" onSubmit={submitReview}>
-            <p className="filter-label">Leave a review</p>
-            <input
-              placeholder="Your name"
-              value={review.name}
-              onChange={(event) =>
-                setReview({ ...review, name: event.target.value })
-              }
-              required
-            />
-            <select
-              value={review.rating}
-              onChange={(event) =>
-                setReview({ ...review, rating: Number(event.target.value) })
-              }
-            >
-              {[5, 4, 3, 2, 1].map((rating) => (
-                <option key={rating} value={rating}>
-                  {rating} stars
-                </option>
-              ))}
-            </select>
-            <textarea
-              placeholder="Your experience"
-              value={review.text}
-              onChange={(event) =>
-                setReview({ ...review, text: event.target.value })
-              }
-              required
-            />
-            <button className="primary-button" disabled={reviewLoading}>
-              {reviewLoading ? "Sending..." : "Share review"}
-            </button>
-          </form>
-        ) : (
-          <p className="muted-copy">
-            <Link to="/login" className="text-button">
-              Log in
-            </Link>{" "}
-            to share a review.
-          </p>
-        )}
+
+        <form className="review-form" onSubmit={handleSubmitReview}>
+          <p className="filter-label">Leave a review</p>
+          <input
+            placeholder="Your name"
+            value={reviewForm.name}
+            onChange={(event) =>
+              setReviewForm({ ...reviewForm, name: event.target.value })
+            }
+            required
+          />
+          <select
+            value={reviewForm.rating}
+            onChange={(event) =>
+              setReviewForm({
+                ...reviewForm,
+                rating: Number(event.target.value),
+              })
+            }
+          >
+            {[5, 4, 3, 2, 1].map((stars) => (
+              <option key={stars} value={stars}>
+                {stars} {stars === 1 ? "star" : "stars"}
+              </option>
+            ))}
+          </select>
+          <textarea
+            placeholder="Your experience with this skincare product..."
+            value={reviewForm.text}
+            onChange={(event) =>
+              setReviewForm({ ...reviewForm, text: event.target.value })
+            }
+            required
+          />
+          <button className="primary-button" disabled={reviewSubmitting}>
+            {reviewSubmitting ? "Submitting..." : "Share review"}
+          </button>
+        </form>
       </section>
     </main>
   );
@@ -1699,6 +1759,8 @@ function CartPage() {
     (sum, item) => sum + item.price * item.quantity,
     0,
   );
+  const freeShippingNeeded = Math.max(0, 50 - subtotal);
+
   return (
     <main className="cart-page">
       <div className="cart-heading">
@@ -1712,6 +1774,7 @@ function CartPage() {
           Continue shopping <ArrowRight size={15} />
         </Link>
       </div>
+
       {cart.length ? (
         <div className="cart-layout">
           <div className="cart-items">
@@ -1724,11 +1787,17 @@ function CartPage() {
                     {item.size} · ${item.price}
                   </span>
                   <div className="quantity">
-                    <button onClick={() => updateQuantity(item.id, -1)}>
+                    <button
+                      onClick={() => updateQuantity(item.id, -1)}
+                      aria-label="Decrease quantity"
+                    >
                       -
                     </button>
                     <b>{item.quantity}</b>
-                    <button onClick={() => updateQuantity(item.id, 1)}>
+                    <button
+                      onClick={() => updateQuantity(item.id, 1)}
+                      aria-label="Increase quantity"
+                    >
                       +
                     </button>
                   </div>
@@ -1745,32 +1814,44 @@ function CartPage() {
           </div>
           <aside className="summary">
             <p className="filter-label">Order summary</p>
-            <div>
+            <div className="summary-line">
               <span>Subtotal</span>
               <b>${subtotal.toFixed(2)}</b>
             </div>
-            <div>
-              <span>Shipping</span>
-              <span>{subtotal >= 50 ? "Free" : "$5.00"}</span>
+            <div className="summary-line">
+              <span>Estimated shipping</span>
+              <b>{subtotal >= 50 ? "Free" : "$5.00"}</b>
             </div>
             <hr />
             <div className="summary-total">
-              <span>Total</span>
+              <span>Estimated total</span>
               <b>${(subtotal + (subtotal >= 50 ? 0 : 5)).toFixed(2)}</b>
             </div>
-            <Link to="/checkout" className="primary-button checkout-button">
-              Checkout <ArrowRight size={16} />
+
+            <p className="secure-note" style={{ margin: "1rem 0" }}>
+              {freeShippingNeeded > 0 ? (
+                <>✦ Add ${freeShippingNeeded.toFixed(2)} more for Free Shipping</>
+              ) : (
+                <>✦ You have unlocked Free Standard Shipping!</>
+              )}
+            </p>
+
+            <Link
+              to="/checkout"
+              className="primary-button checkout-button"
+              style={{ textAlign: "center", textDecoration: "none" }}
+            >
+              Proceed to checkout <ArrowRight size={16} />
             </Link>
-            <p className="secure-note">Taxes calculated at checkout</p>
           </aside>
         </div>
       ) : (
         <div className="empty-state cart-empty">
           <ShoppingBag size={30} />
-          <h2>Your bag is taking a breath.</h2>
-          <p>Add something lovely to begin.</p>
+          <h2>Your bag is empty.</h2>
+          <p>Explore our considered formulas and start your ritual.</p>
           <Link to="/shop" className="primary-button">
-            Explore products <ArrowRight size={15} />
+            Shop the collection <ArrowRight size={15} />
           </Link>
         </div>
       )}
@@ -1781,6 +1862,7 @@ function CartPage() {
 function WishlistPage() {
   const { products, wishlist, loading } = useShop();
   const saved = products.filter((product) => wishlist.includes(product.id));
+
   return (
     <main className="wishlist-page">
       <div className="cart-heading">
@@ -1791,6 +1873,7 @@ function WishlistPage() {
           </h1>
         </div>
       </div>
+
       {loading ? (
         <div className="empty-state cart-empty">
           <h2>Loading your wishlist.</h2>
@@ -1880,14 +1963,8 @@ function AboutPage() {
 }
 
 function JournalPage() {
-  const [entries, setEntries] = useState([]);
-  const { setApiError } = useShop();
-  useEffect(() => {
-    fetch(`${API_URL}/content/journal`)
-      .then((response) => response.json())
-      .then((data) => setEntries(data.entries || []))
-      .catch(() => setApiError("Journal content could not be loaded."));
-  }, [setApiError]);
+  const { journal } = useShop();
+
   return (
     <main className="journal-page">
       <section className="journal-heading">
@@ -1901,7 +1978,7 @@ function JournalPage() {
         </p>
       </section>
       <div className="journal-list">
-        {entries.map((entry, index) => (
+        {journal.map((entry, index) => (
           <article className="journal-entry" key={entry.title}>
             <span>0{index + 1}</span>
             <div>
@@ -1918,34 +1995,21 @@ function JournalPage() {
 }
 
 function ContactPage() {
-  const content = fallbackContact;
-  const { setApiError } = useShop();
+  const { contact, addMessage } = useShop();
   const [form, setForm] = useState({ name: "", email: "", message: "" });
   const [sent, setSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const submitMessage = async (event) => {
+
+  const submitMessage = (event) => {
     event.preventDefault();
     setIsSubmitting(true);
-    setSubmitError("");
-    setSent(false);
-    try {
-      const response = await fetch(`${API_URL}/contact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Message could not be sent");
-      setForm({ name: "", email: "", message: "" });
-      setSent(true);
-    } catch (error) {
-      setSubmitError(error.message || "Message could not be sent. Please try again.");
-      setApiError("");
-    } finally {
-      setIsSubmitting(false);
-    }
+
+    addMessage(form);
+    setForm({ name: "", email: "", message: "" });
+    setSent(true);
+    setIsSubmitting(false);
   };
+
   return (
     <main className="contact-page">
       <section>
@@ -1954,24 +2018,25 @@ function ContactPage() {
           Have a <i>question?</i>
         </h1>
         <p>
-          Our small team reads every note. Reach us {content.hours || "Monday to Friday"}.
+          Our small team reads every note. Reach us{" "}
+          {contact.hours || "Monday to Friday"}.
         </p>
       </section>
       <div className="contact-grid">
-        <a href={`mailto:${content.email}`}>
+        <a href={`mailto:${contact.email}`}>
           <span>Email us</span>
-          <strong>{content.email}</strong>
+          <strong>{contact.email}</strong>
           <ArrowRight size={18} />
         </a>
-        <a href={`tel:${content.phone}`}>
+        <a href={`tel:${contact.phone}`}>
           <span>Call us</span>
-          <strong>{content.phone}</strong>
+          <strong>{contact.phone}</strong>
           <ArrowRight size={18} />
         </a>
         <div>
           <span>Visit our studio</span>
           <strong>
-            {content.address.split("\n").map((line) => (
+            {contact.address.split("\n").map((line) => (
               <span key={line}>
                 {line}
                 <br />
@@ -1993,11 +2058,6 @@ function ContactPage() {
             Thanks, your message has been sent. We&apos;ll be in touch soon.
           </p>
         )}
-        {submitError && (
-          <p className="error-copy" role="alert">
-            {submitError}
-          </p>
-        )}
         <label>
           Your name
           <input
@@ -2005,7 +2065,9 @@ function ContactPage() {
             autoComplete="name"
             placeholder="Jane Smith"
             value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            onChange={(event) =>
+              setForm({ ...form, name: event.target.value })
+            }
             required
           />
         </label>
@@ -2017,7 +2079,9 @@ function ContactPage() {
             autoComplete="email"
             placeholder="jane@example.com"
             value={form.email}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
+            onChange={(event) =>
+              setForm({ ...form, email: event.target.value })
+            }
             required
           />
         </label>
@@ -2044,39 +2108,18 @@ function ContactPage() {
   );
 }
 
-const countries = [
-  { code: "US", name: "United States", shipping: 5 },
-  { code: "CA", name: "Canada", shipping: 12 },
-  { code: "GB", name: "United Kingdom", shipping: 15 },
-  { code: "AU", name: "Australia", shipping: 25 },
-  { code: "IN", name: "India", shipping: 18 },
-  { code: "DE", name: "Germany", shipping: 10 },
-  { code: "FR", name: "France", shipping: 10 },
-  { code: "JP", name: "Japan", shipping: 20 },
-];
-
 function CheckoutPage() {
-  const { cart, clearCart, authHeaders, user } = useShop();
-  const [checkoutParams] = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
+  const { cart, placeOrder, user, quickLogin } = useShop();
+  const [email, setEmail] = useState(() => user?.email || "");
+  const [name, setName] = useState(() => user?.name || "");
   const [country, setCountry] = useState("US");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [zip, setZip] = useState("");
   const [loading, setLoading] = useState(false);
-  const [success] = useState(checkoutParams.get("paid") === "1");
-  const [orderId] = useState(checkoutParams.get("order") || "");
-  const [error, setError] = useState(
-    checkoutParams.get("cancelled") === "1"
-      ? "Payment was cancelled. Your bag is still saved."
-      : "",
-  );
-
-  useEffect(() => {
-    if (checkoutParams.get("paid") === "1") clearCart();
-  }, [checkoutParams, clearCart]);
+  const [placedOrder, setPlacedOrder] = useState(null);
+  const [error, setError] = useState("");
 
   const selectedCountry = countries.find((c) => c.code === country);
   const subtotal = cart.reduce(
@@ -2086,61 +2129,76 @@ function CheckoutPage() {
   const shipping = subtotal >= 50 ? 0 : selectedCountry?.shipping || 5;
   const total = subtotal + shipping;
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!name || !email || !address || !city || !state || !zip) {
-      alert("Please fill in all fields");
+      setError("Please fill in all shipping fields");
       return;
     }
 
     setLoading(true);
     setError("");
-    const items = cart.map((item) => ({
-      productId: item.id,
-      quantity: item.quantity,
-    }));
 
     try {
-      const sessionId =
-        localStorage.getItem("session-id") ||
-        Math.random().toString(36).slice(2, 11);
-      localStorage.setItem("session-id", sessionId);
-
-      const response = await fetch(`${API_URL}/checkout-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          sessionId,
-          customer: { email, name, country, address, city, state, zip },
-          items,
-        }),
+      const order = placeOrder({
+        customer: { email, name, country, address, city, state, zip },
+        items: cart,
+        subtotal,
+        shipping,
+        total,
       });
-
-      if (!response.ok) throw new Error("Order API returned an error");
-      const checkoutSession = await response.json();
-      if (!checkoutSession.url)
-        throw new Error(
-          checkoutSession.error || "Payment session could not be created",
-        );
-      window.location.assign(checkoutSession.url);
-    } catch (error) {
-      setError(`Order could not be placed: ${error.message}`);
+      setPlacedOrder(order);
+    } catch (err) {
+      setError("Order could not be processed: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (success) {
+  if (placedOrder) {
     return (
       <main className="checkout-page">
         <div className="order-success">
           <p className="eyebrow">Order received</p>
-          <h1>Thank you, {name.split(" ")[0] || "there"}.</h1>
+          <h1>Thank you, {placedOrder.customer.name.split(" ")[0] || "there"}.</h1>
           <p>
-            Your order has been placed successfully. We will send updates to{" "}
-            {email}.
+            Your skincare order has been placed successfully! We will send tracking
+            updates to <b>{placedOrder.customer.email}</b>.
           </p>
-          <strong>Order number: {orderId}</strong>
+          <strong>Order number: {placedOrder.id}</strong>
+
+          <div
+            style={{
+              marginTop: "1.5rem",
+              marginBottom: "1.5rem",
+              textAlign: "left",
+              padding: "1.2rem",
+              borderRadius: "10px",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              maxWidth: "480px",
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
+          >
+            <p style={{ margin: "0 0 0.5rem", fontWeight: 600, fontSize: "0.95rem" }}>
+              Shipping to:
+            </p>
+            <p style={{ margin: 0, opacity: 0.85, fontSize: "0.9rem", lineHeight: "1.4" }}>
+              {placedOrder.customer.name}
+              <br />
+              {placedOrder.customer.address}
+              <br />
+              {placedOrder.customer.city}, {placedOrder.customer.state}{" "}
+              {placedOrder.customer.zip}
+            </p>
+            <hr style={{ margin: "0.8rem 0", borderColor: "var(--border)", opacity: 0.5 }} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", fontWeight: 600 }}>
+              <span>Total Paid:</span>
+              <span>${placedOrder.total.toFixed(2)}</span>
+            </div>
+          </div>
+
           <Link to="/shop" className="primary-button">
             Continue shopping <ArrowRight size={15} />
           </Link>
@@ -2155,24 +2213,9 @@ function CheckoutPage() {
         <div className="empty-state">
           <ShoppingBag size={30} />
           <h2>Your bag is empty</h2>
-          <p>Add items before proceeding to checkout.</p>
+          <p>Add skincare essentials before proceeding to checkout.</p>
           <Link to="/shop" className="primary-button">
-            Continue shopping <ArrowRight size={15} />
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  if (!user) {
-    return (
-      <main className="checkout-page">
-        <div className="empty-state">
-          <ShoppingBag size={30} />
-          <h2>Log in before checkout</h2>
-          <p>Your bag will stay saved to this browser.</p>
-          <Link to="/login" className="primary-button">
-            Log in <ArrowRight size={15} />
+            Explore collection <ArrowRight size={15} />
           </Link>
         </div>
       </main>
@@ -2191,11 +2234,42 @@ function CheckoutPage() {
       <div className="checkout-layout">
         <form className="checkout-form" onSubmit={handleSubmit}>
           {error && <p className="checkout-error">{error}</p>}
+
+          {!user && (
+            <div
+              style={{
+                marginBottom: "1rem",
+                padding: "0.8rem",
+                background: "var(--surface)",
+                borderRadius: "8px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontSize: "0.85rem" }}>Have an account?</span>
+              <button
+                type="button"
+                className="outline-button"
+                style={{ fontSize: "0.8rem", padding: "0.4rem 0.8rem" }}
+                onClick={() => {
+                  const u = quickLogin("customer");
+                  if (u) {
+                    setEmail(u.email);
+                    setName(u.name);
+                  }
+                }}
+              >
+                1-Click Demo Sign In
+              </button>
+            </div>
+          )}
+
           <fieldset>
             <legend>Contact information</legend>
             <input
               type="email"
-              placeholder="Email"
+              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -2252,7 +2326,7 @@ function CheckoutPage() {
             </div>
           </fieldset>
           <button type="submit" className="primary-button" disabled={loading}>
-            {loading ? "Processing..." : "Complete order"}{" "}
+            {loading ? "Processing..." : "Place order"}{" "}
             <ArrowRight size={16} />
           </button>
         </form>
@@ -2279,7 +2353,7 @@ function CheckoutPage() {
           </div>
           <div className="summary-line">
             <span>Estimated tax</span>
-            <b>Calculated at checkout</b>
+            <b>$0.00 (Included)</b>
           </div>
           <hr />
           <div className="summary-total">
@@ -2287,11 +2361,11 @@ function CheckoutPage() {
             <b>${total.toFixed(2)}</b>
           </div>
           <p className="secure-note">
-            ✦ Secure payment processing
+            ✦ Instant 100% client-side demo checkout
             <br />✦{" "}
             {subtotal >= 50
-              ? "Free shipping"
-              : `Shipping: $${shipping.toFixed(2)}`}
+              ? "Free standard shipping unlocked"
+              : `Standard shipping: $${shipping.toFixed(2)}`}
           </p>
         </aside>
       </div>
@@ -2303,6 +2377,7 @@ function App() {
   return (
     <BrowserRouter>
       <ShopProvider>
+        <ScrollToTop />
         <ApiNotice />
         <Header />
         <Routes>
@@ -2317,8 +2392,12 @@ function App() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<AuthPage />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
-          <Route path="/auth/google/callback" element={<GoogleAuthCallbackPage />} />
+          <Route
+            path="/auth/google/callback"
+            element={<GoogleAuthCallbackPage />}
+          />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="*" element={<HomePage />} />
         </Routes>
         <footer>
           <span>
@@ -2329,10 +2408,11 @@ function App() {
             <Link to="/journal">Journal</Link>
             <Link to="/contact">Contact</Link>
           </nav>
-          <span>© 2024 Luma skincare</span>
+          <span>© 2026 Luma skincare</span>
         </footer>
       </ShopProvider>
     </BrowserRouter>
   );
 }
+
 export default App;
