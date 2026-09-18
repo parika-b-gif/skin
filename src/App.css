@@ -1810,3 +1810,31 @@ footer {
     grid-column: 1 / -1;
   }
 }
+
+/* Full Stack API Status Badge */
+.backend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--foreground);
+  opacity: 0.9;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.online {
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+.status-dot.checking {
+  background: #f59e0b;
+}

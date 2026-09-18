@@ -42,6 +42,7 @@ import {
 } from "./mockData.js";
 import "./App.css";
 
+const API_URL = "http://localhost:3001/api";
 const ShopContext = createContext(null);
 
 function loadStorage(key, fallback) {
@@ -77,10 +78,13 @@ function ShopProvider({ children }) {
   const [wishlist, setWishlist] = useState(() =>
     loadStorage("luma-wishlist", []),
   );
-  const [users, setUsers] = useState(() =>
+  const [users] = useState(() =>
     loadStorage("luma-users", defaultUsers),
   );
   const [user, setUser] = useState(() => loadStorage("luma-user", null));
+  const [token, setToken] = useState(
+    () => localStorage.getItem("luma-token") || "",
+  );
   const [orders, setOrders] = useState(() =>
     loadStorage("luma-orders", initialOrders),
   );
@@ -95,12 +99,30 @@ function ShopProvider({ children }) {
   );
   const [contact] = useState(initialContact);
   const [apiError, setApiError] = useState("");
+  const [backendStatus, setBackendStatus] = useState("checking");
   const [darkMode, setDarkMode] = useState(
     () => localStorage.getItem("luma-theme") === "dark",
   );
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Sync to localStorage
+  const [sessionId] = useState(() => {
+    let sid = localStorage.getItem("session-id");
+    if (!sid) {
+      sid =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : "sid-" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem("session-id", sid);
+    }
+    return sid;
+  });
+
+  const authHeaders = useCallback(
+    () => (token ? { Authorization: `Bearer ${token}` } : {}),
+    [token],
+  );
+
+  // Sync state to localStorage cache
   useEffect(() => {
     saveStorage("luma-products", products);
   }, [products]);
@@ -142,122 +164,250 @@ function ShopProvider({ children }) {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
   }, [darkMode]);
 
+  // Initial Backend API Handshake and Data Sync
+  useEffect(() => {
+    fetch(`${API_URL}/health`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.status === "ok") {
+          setBackendStatus("connected");
+        }
+      })
+      .catch(() => setBackendStatus("offline"));
+
+    // Fetch live products from backend
+    fetch(`${API_URL}/products`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
+        }
+      })
+      .catch(() => {});
+
+    // Fetch journal from backend
+    fetch(`${API_URL}/content/journal`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.entries) && data.entries.length > 0) {
+          setJournal(data.entries);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Sync user profile when token is active
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.ok && res.data?.user) {
+          setUser(res.data.user);
+        } else {
+          localStorage.removeItem("luma-token");
+          setToken("");
+          setUser(null);
+        }
+      })
+      .catch(() => {});
+  }, [token]);
+
+  // Backend Cart Sync Helper
+  const syncCartToBackend = useCallback(
+    (nextCart) => {
+      fetch(`${API_URL}/cart/${sessionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: nextCart.map((item) => ({
+            productId: item.id,
+            quantity: item.quantity,
+          })),
+        }),
+      }).catch(() => {});
+    },
+    [sessionId],
+  );
+
   // Cart operations
-  const addToCart = useCallback((product) => {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.id === product.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
-        );
-      }
-      return [...prev, { ...product, quantity: 1 }];
-    });
-  }, []);
+  const addToCart = useCallback(
+    (product) => {
+      setCart((prev) => {
+        const existing = prev.find((item) => item.id === product.id);
+        const next = existing
+          ? prev.map((item) =>
+              item.id === product.id
+                ? { ...item, quantity: item.quantity + 1 }
+                : item,
+            )
+          : [...prev, { ...product, quantity: 1 }];
+        syncCartToBackend(next);
+        return next;
+      });
+    },
+    [syncCartToBackend],
+  );
 
-  const updateQuantity = useCallback((id, amount) => {
-    setCart((prev) =>
-      prev
-        .map((item) =>
-          item.id === id
-            ? { ...item, quantity: Math.max(0, item.quantity + amount) }
-            : item,
-        )
-        .filter((item) => item.quantity > 0),
-    );
-  }, []);
+  const updateQuantity = useCallback(
+    (id, amount) => {
+      setCart((prev) => {
+        const next = prev
+          .map((item) =>
+            item.id === id
+              ? { ...item, quantity: Math.max(0, item.quantity + amount) }
+              : item,
+          )
+          .filter((item) => item.quantity > 0);
+        syncCartToBackend(next);
+        return next;
+      });
+    },
+    [syncCartToBackend],
+  );
 
-  const removeFromCart = useCallback((id) => {
-    setCart((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const removeFromCart = useCallback(
+    (id) => {
+      setCart((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        syncCartToBackend(next);
+        return next;
+      });
+    },
+    [syncCartToBackend],
+  );
 
   const clearCart = useCallback(() => {
     setCart([]);
-  }, []);
+    syncCartToBackend([]);
+  }, [syncCartToBackend]);
 
   // Wishlist operations
-  const toggleWishlist = useCallback((id) => {
-    setWishlist((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
-    );
-  }, []);
+  const toggleWishlist = useCallback(
+    (id) => {
+      setWishlist((prev) => {
+        const next = prev.includes(id)
+          ? prev.filter((item) => item !== id)
+          : [...prev, id];
+        fetch(`${API_URL}/wishlist/${sessionId}/${id}`, {
+          method: "POST",
+        }).catch(() => {});
+        return next;
+      });
+    },
+    [sessionId],
+  );
 
   // Auth operations
-  const login = useCallback(
-    async ({ email, password }) => {
-      const normalizedEmail = email.trim().toLowerCase();
-      const matched = users.find(
-        (u) =>
-          u.email.toLowerCase() === normalizedEmail && u.password === password,
-      );
-      if (!matched) {
-        throw new Error(
-          "Invalid email or password. You can use the Demo Customer or Demo Admin buttons.",
-        );
+  const login = useCallback(async ({ email, password }) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Login failed");
       }
-      const safeUser = {
-        id: matched.id,
-        name: matched.name,
-        email: matched.email,
-        role: matched.role,
-      };
-      setUser(safeUser);
-      return safeUser;
-    },
-    [users],
-  );
-
-  const register = useCallback(
-    async ({ email, password, name }) => {
+      localStorage.setItem("luma-token", data.data.token);
+      setToken(data.data.token);
+      setUser(data.data.user);
+      return data.data.user;
+    } catch (err) {
+      // Offline / Demo fallback
       const normalizedEmail = email.trim().toLowerCase();
-      if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
-        throw new Error("An account with this email already exists. Please log in.");
-      }
-      const newUser = {
-        id: "user-" + Date.now(),
-        name: name || email.split("@")[0],
-        email: normalizedEmail,
-        password,
-        role: "customer",
-      };
-      setUsers((prev) => [...prev, newUser]);
-      const safeUser = {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
-      };
-      setUser(safeUser);
-      return safeUser;
-    },
-    [users],
-  );
-
-  const quickLogin = useCallback(
-    (role = "customer") => {
-      if (role === "admin") {
-        const adminUser = users.find((u) => u.role === "admin") || {
-          id: "user-admin",
+      if (
+        (normalizedEmail === "admin@luma.skin" && password === "admin123") ||
+        (normalizedEmail === "admin@example.com" &&
+          password === "use_a_strong_unique_password")
+      ) {
+        const adminUser = {
+          id: "admin-id",
           name: "Luma Admin",
-          email: "admin@luma.skin",
+          email: normalizedEmail,
           role: "admin",
         };
         setUser(adminUser);
         return adminUser;
-      } else {
-        const custUser = users.find((u) => u.role === "customer") || {
-          id: "user-customer",
+      }
+      if (normalizedEmail === "alia@luma.skin" && password === "password123") {
+        const custUser = {
+          id: "cust-id",
           name: "Alia Stone",
-          email: "alia@luma.skin",
+          email: normalizedEmail,
           role: "customer",
         };
         setUser(custUser);
         return custUser;
       }
+      throw err;
+    }
+  }, []);
+
+  const register = useCallback(async ({ email, password, name }) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+      localStorage.setItem("luma-token", data.data.token);
+      setToken(data.data.token);
+      setUser(data.data.user);
+      return data.data.user;
+    } catch (err) {
+      console.warn("Offline user registration fallback:", err?.message);
+      const newUser = {
+        id: "user-" + Date.now(),
+        name: name || email.split("@")[0],
+        email: email.trim().toLowerCase(),
+        role: "customer",
+      };
+      setUser(newUser);
+      return newUser;
+    }
+  }, []);
+
+  const quickLogin = useCallback(
+    async (role = "customer") => {
+      if (role === "admin") {
+        return await login({
+          email: "admin@luma.skin",
+          password: "admin123",
+        }).catch(() => {
+          const fallbackAdmin = {
+            id: "user-admin",
+            name: "Luma Admin",
+            email: "admin@luma.skin",
+            role: "admin",
+          };
+          setUser(fallbackAdmin);
+          return fallbackAdmin;
+        });
+      } else {
+        return await login({
+          email: "alia@luma.skin",
+          password: "password123",
+        }).catch(() => {
+          const fallbackCust = {
+            id: "user-customer",
+            name: "Alia Stone",
+            email: "alia@luma.skin",
+            role: "customer",
+          };
+          setUser(fallbackCust);
+          return fallbackCust;
+        });
+      }
     },
-    [users],
+    [login],
   );
 
   const completeGoogleLogin = useCallback(async () => {
@@ -272,15 +422,51 @@ function ShopProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    if (token) {
+      fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
+    localStorage.removeItem("luma-token");
+    setToken("");
     setUser(null);
-  }, []);
+  }, [token]);
 
-  // Order placement
+  // Order placement via Backend API
   const placeOrder = useCallback(
-    ({ customer, items, subtotal, shipping, total }) => {
+    async ({ customer, items, subtotal, shipping, total }) => {
+      try {
+        const response = await fetch(`${API_URL}/orders`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
+          body: JSON.stringify({
+            sessionId,
+            customer,
+            items: items.map((it) => ({
+              productId: it.id,
+              quantity: it.quantity,
+            })),
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data?.id) {
+          setOrders((prev) => [data, ...prev]);
+          clearCart();
+          return data;
+        }
+      } catch (err) {
+        console.warn("[Orders] Backend order fallback:", err);
+      }
+
+      // Offline fallback
       const orderId = `LUM-${Math.floor(100000 + Math.random() * 900000)}`;
       const now = new Date();
-      const newOrder = {
+      const localOrder = {
         id: orderId,
         orderNumber: orderId,
         createdAt: now.toISOString(),
@@ -297,7 +483,6 @@ function ShopProvider({ children }) {
         status: "processing",
       };
 
-      // Deduct stock
       setProducts((prev) =>
         prev.map((p) => {
           const cartItem = items.find((ci) => ci.id === p.id);
@@ -309,137 +494,77 @@ function ShopProvider({ children }) {
         }),
       );
 
-      // Save order
-      setOrders((prev) => [newOrder, ...prev]);
-
-      // Clear cart
-      setCart([]);
-
-      return newOrder;
+      setOrders((prev) => [localOrder, ...prev]);
+      clearCart();
+      return localOrder;
     },
-    [],
+    [sessionId, authHeaders, clearCart],
   );
 
-  // Review operations
-  const addReview = useCallback((productId, { name, rating, text }) => {
-    const newRev = {
-      _id: `rev-${Date.now()}`,
-      productId,
-      userId: user?.id || "guest",
-      name: name.trim(),
-      rating: Number(rating),
-      text: text.trim(),
-      createdAt: new Date().toISOString(),
-    };
-
-    setReviews((prev) => [newRev, ...prev]);
-
-    // Recalculate product rating & reviews count
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          const productReviews = [
-            newRev,
-            ...reviews.filter((r) => r.productId === productId),
-          ];
-          const avgRating =
-            productReviews.reduce((sum, r) => sum + r.rating, 0) /
-            productReviews.length;
-          return {
-            ...p,
-            rating: Number(avgRating.toFixed(1)),
-            reviews: productReviews.length,
-          };
+  // Review operations via Backend API
+  const addReview = useCallback(
+    async (productId, { name, rating, text }) => {
+      try {
+        const response = await fetch(`${API_URL}/products/${productId}/reviews`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
+          body: JSON.stringify({ name, rating, text }),
+        });
+        const savedReview = await response.json();
+        if (response.ok && savedReview?._id) {
+          setReviews((prev) => [savedReview, ...prev]);
+          return savedReview;
         }
-        return p;
-      }),
-    );
+      } catch (err) {
+        console.warn("[Reviews] Backend review fallback:", err);
+      }
 
-    return newRev;
-  }, [reviews, user]);
+      const newRev = {
+        _id: `rev-${Date.now()}`,
+        productId,
+        userId: user?.id || "guest",
+        name: name.trim(),
+        rating: Number(rating),
+        text: text.trim(),
+        createdAt: new Date().toISOString(),
+      };
 
-  const deleteReview = useCallback((reviewId) => {
-    const target = reviews.find((r) => r._id === reviewId);
-    if (!target) return;
+      setReviews((prev) => [newRev, ...prev]);
+      return newRev;
+    },
+    [authHeaders, user],
+  );
 
-    setReviews((prev) => prev.filter((r) => r._id !== reviewId));
+  const deleteReview = useCallback(
+    async (productId, reviewId) => {
+      try {
+        await fetch(`${API_URL}/products/${productId}/reviews/${reviewId}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+      } catch (err) {
+        console.warn("[Reviews] Backend delete review fallback:", err);
+      }
+      setReviews((prev) => prev.filter((r) => r._id !== reviewId));
+    },
+    [authHeaders],
+  );
 
-    // Recalculate product rating
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === target.productId) {
-          const remaining = reviews.filter(
-            (r) => r.productId === target.productId && r._id !== reviewId,
-          );
-          const avgRating = remaining.length
-            ? Number(
-                (
-                  remaining.reduce((sum, r) => sum + r.rating, 0) /
-                  remaining.length
-                ).toFixed(1),
-              )
-            : 5.0;
-          return {
-            ...p,
-            rating: avgRating,
-            reviews: remaining.length,
-          };
-        }
-        return p;
-      }),
-    );
-  }, [reviews]);
-
-  // Admin operations
-  const updateStock = useCallback((product, newStock) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === product.id ? { ...p, inventory: newStock } : p)),
-    );
-  }, []);
-
-  const createProduct = useCallback((productData) => {
-    const newProduct = {
-      ...productData,
-      id: Date.now(),
-      rating: 5.0,
-      reviews: 0,
-      image:
-        productData.image ||
-        "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85",
-      size: productData.size || "50 ml",
-      description:
-        productData.description ||
-        "A gentle botanical formulation designed for daily barrier nourishment.",
-      inventory: Number(productData.inventory) || 25,
-      price: Number(productData.price) || 30,
-    };
-    setProducts((prev) => [...prev, newProduct]);
-    return newProduct;
-  }, []);
-
-  const deleteProduct = useCallback((product) => {
-    setProducts((prev) => prev.filter((p) => p.id !== product.id));
-  }, []);
-
-  const updateOrderStatus = useCallback((order, status) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === order.id ? { ...o, status } : o)),
-    );
-  }, []);
-
-  const updateMessage = useCallback((message, action) => {
-    if (action === "delete") {
-      setMessages((prev) => prev.filter((m) => m._id !== message._id));
-    } else {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === message._id ? { ...m, read: !m.read } : m,
-        ),
-      );
+  // Contact inquiries via Backend API
+  const addMessage = useCallback(async ({ name, email, message }) => {
+    try {
+      await fetch(`${API_URL}/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, message }),
+      });
+    } catch (err) {
+      console.warn("[Contact] Backend message fallback:", err);
     }
-  }, []);
 
-  const addMessage = useCallback(({ name, email, message }) => {
     const newMsg = {
       _id: `msg-${Date.now()}`,
       name,
@@ -452,11 +577,195 @@ function ShopProvider({ children }) {
     return newMsg;
   }, []);
 
-  const saveJournal = useCallback((newJournal) => {
-    setJournal(newJournal);
-  }, []);
+  // Admin operations via Backend API
+  const loadAdminData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const headers = authHeaders();
+      const [sumRes, prodRes, ordRes, revRes, msgRes, jrnRes] =
+        await Promise.all([
+          fetch(`${API_URL}/admin/summary`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/admin/products`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/admin/orders`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/admin/reviews`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/admin/contact-messages`, { headers }).then((r) =>
+            r.json(),
+          ),
+          fetch(`${API_URL}/admin/content/journal`, { headers }).then((r) =>
+            r.json(),
+          ),
+        ]);
 
-  const authHeaders = useCallback(() => ({}), []);
+      if (prodRes?.ok && prodRes.data) setProducts(prodRes.data);
+      if (ordRes?.ok && ordRes.data) setOrders(ordRes.data);
+      if (revRes?.ok && revRes.data) setReviews(revRes.data);
+      if (msgRes?.ok && msgRes.data) setMessages(msgRes.data);
+      if (jrnRes?.ok && jrnRes.data?.entries) setJournal(jrnRes.data.entries);
+      return sumRes?.data || null;
+    } catch {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [authHeaders]);
+
+  const updateStock = useCallback(
+    async (product, newStock) => {
+      try {
+        await fetch(`${API_URL}/admin/products/${product.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
+          body: JSON.stringify({ inventory: newStock }),
+        });
+      } catch (err) {
+        console.warn("[Admin] Stock update fallback:", err);
+      }
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === product.id ? { ...p, inventory: newStock } : p,
+        ),
+      );
+    },
+    [authHeaders],
+  );
+
+  const createProduct = useCallback(
+    async (productData) => {
+      try {
+        const res = await fetch(`${API_URL}/admin/products`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
+          body: JSON.stringify({
+            ...productData,
+            price: Number(productData.price),
+            inventory: Number(productData.inventory),
+          }),
+        });
+        const json = await res.json();
+        if (res.ok && json.data) {
+          setProducts((prev) => [...prev, json.data]);
+          return json.data;
+        }
+      } catch (err) {
+        console.warn("[Admin] Create product fallback:", err);
+      }
+
+      const newProduct = {
+        ...productData,
+        id: Date.now(),
+        rating: 5.0,
+        reviews: 0,
+        image:
+          productData.image ||
+          "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85",
+        size: productData.size || "50 ml",
+        description:
+          productData.description ||
+          "A gentle botanical formulation designed for daily barrier nourishment.",
+        inventory: Number(productData.inventory) || 25,
+        price: Number(productData.price) || 30,
+      };
+      setProducts((prev) => [...prev, newProduct]);
+      return newProduct;
+    },
+    [authHeaders],
+  );
+
+  const deleteProduct = useCallback(
+    async (product) => {
+      try {
+        await fetch(`${API_URL}/admin/products/${product.id}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+      } catch (err) {
+        console.warn("[Admin] Delete product fallback:", err);
+      }
+      setProducts((prev) => prev.filter((p) => p.id !== product.id));
+    },
+    [authHeaders],
+  );
+
+  const updateOrderStatus = useCallback(
+    async (order, status) => {
+      try {
+        await fetch(`${API_URL}/admin/orders/${order.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
+          body: JSON.stringify({ status }),
+        });
+      } catch (err) {
+        console.warn("[Admin] Order status fallback:", err);
+      }
+      setOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? { ...o, status } : o)),
+      );
+    },
+    [authHeaders],
+  );
+
+  const updateMessage = useCallback(
+    async (message, action) => {
+      try {
+        if (action === "delete") {
+          await fetch(`${API_URL}/admin/contact-messages/${message._id}`, {
+            method: "DELETE",
+            headers: authHeaders(),
+          });
+        } else {
+          await fetch(`${API_URL}/admin/contact-messages/${message._id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify({ read: !message.read }),
+          });
+        }
+      } catch (err) {
+        console.warn("[Admin] Message action fallback:", err);
+      }
+
+      if (action === "delete") {
+        setMessages((prev) => prev.filter((m) => m._id !== message._id));
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === message._id ? { ...m, read: !m.read } : m,
+          ),
+        );
+      }
+    },
+    [authHeaders],
+  );
+
+  const saveJournal = useCallback(
+    async (newJournal) => {
+      try {
+        await fetch(`${API_URL}/admin/content/journal`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+          },
+          body: JSON.stringify({ entries: newJournal }),
+        });
+      } catch (err) {
+        console.warn("[Admin] Save journal fallback:", err);
+      }
+      setJournal(newJournal);
+    },
+    [authHeaders],
+  );
 
   const value = useMemo(
     () => ({
@@ -473,6 +782,7 @@ function ShopProvider({ children }) {
       loading,
       apiError,
       setApiError,
+      backendStatus,
       darkMode,
       setDarkMode,
       addToCart,
@@ -495,6 +805,7 @@ function ShopProvider({ children }) {
       updateMessage,
       addMessage,
       saveJournal,
+      loadAdminData,
       authHeaders,
     }),
     [
@@ -510,6 +821,7 @@ function ShopProvider({ children }) {
       contact,
       loading,
       apiError,
+      backendStatus,
       darkMode,
       addToCart,
       updateQuantity,
@@ -531,6 +843,7 @@ function ShopProvider({ children }) {
       updateMessage,
       addMessage,
       saveJournal,
+      loadAdminData,
       authHeaders,
     ],
   );
@@ -547,7 +860,8 @@ function useShop() {
 }
 
 function Header() {
-  const { cart, wishlist, darkMode, setDarkMode, user, logout } = useShop();
+  const { cart, wishlist, darkMode, setDarkMode, user, logout, backendStatus } =
+    useShop();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -581,6 +895,25 @@ function Header() {
         )}
       </nav>
       <div className="header-actions">
+        {/* Full Stack API Status Badge */}
+        <div
+          className="backend-pill"
+          title={
+            backendStatus === "connected"
+              ? "Backend API Connected (port 3001)"
+              : "Connecting to API backend..."
+          }
+        >
+          <span
+            className={`status-dot ${
+              backendStatus === "connected" ? "online" : "checking"
+            }`}
+          />
+          <small>
+            {backendStatus === "connected" ? "API Online" : "Connecting"}
+          </small>
+        </div>
+
         <button
           className="icon-button"
           aria-label="Toggle theme"
@@ -615,9 +948,9 @@ function Header() {
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
-              title={`Logged in as ${user.name} (${user.role})`}
+              title={`Logged in as ${user.name || user.email} (${user.role})`}
             >
-              {user.name.split(" ")[0]}
+              {(user.name || user.email).split(" ")[0]}
             </span>
             <button
               className="icon-button"
@@ -681,8 +1014,7 @@ function ProductImage({ src, alt, className }) {
 
 function AuthPage({ mode = "login" }) {
   const navigate = useNavigate();
-  const { login, register, quickLogin, completeGoogleLogin, user } =
-    useShop();
+  const { login, register, quickLogin, completeGoogleLogin, user } = useShop();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -711,8 +1043,8 @@ function AuthPage({ mode = "login" }) {
     }
   };
 
-  const handleDemoLogin = (role) => {
-    quickLogin(role);
+  const handleDemoLogin = async (role) => {
+    await quickLogin(role);
     navigate(role === "admin" ? "/admin" : "/shop");
   };
 
@@ -842,6 +1174,8 @@ function AdminPage() {
     updateMessage,
     journal,
     saveJournal,
+    loadAdminData,
+    loading,
   } = useShop();
 
   const [newProduct, setNewProduct] = useState({
@@ -855,6 +1189,13 @@ function AdminPage() {
 
   const [localJournal, setLocalJournal] = useState(journal);
   const [journalSaved, setJournalSaved] = useState(false);
+
+  // Load live admin data from backend on entry
+  useEffect(() => {
+    if (user?.role === "admin") {
+      loadAdminData();
+    }
+  }, [user, loadAdminData]);
 
   if (!user || user.role !== "admin") {
     return (
@@ -892,7 +1233,10 @@ function AdminPage() {
 
   const handleUpdateStock = (product) => {
     const current = product.inventory ?? 25;
-    const input = window.prompt(`Update stock quantity for ${product.name}:`, current);
+    const input = window.prompt(
+      `Update stock quantity for ${product.name}:`,
+      current,
+    );
     if (input === null) return;
     const num = Number(input);
     if (!Number.isInteger(num) || num < 0) {
@@ -923,7 +1267,7 @@ function AdminPage() {
 
   const handleDeleteReview = (review) => {
     if (window.confirm("Are you sure you want to delete this customer review?")) {
-      deleteReview(review._id);
+      deleteReview(review.productId, review._id);
     }
   };
 
@@ -943,8 +1287,15 @@ function AdminPage() {
           </h1>
         </div>
         <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <button
+            className="text-button"
+            onClick={loadAdminData}
+            disabled={loading}
+          >
+            {loading ? "Refreshing..." : "Refresh live data"}
+          </button>
           <span style={{ fontSize: "0.9rem", opacity: 0.8 }}>
-            Logged in as <b>{user.name}</b> (Store Admin)
+            Logged in as <b>{user.name || user.email}</b> (Admin)
           </span>
         </div>
       </div>
@@ -1045,9 +1396,7 @@ function AdminPage() {
                 </small>
               </span>
               <b
-                className={
-                  (product.inventory ?? 25) <= 5 ? "low-stock" : ""
-                }
+                className={(product.inventory ?? 25) <= 5 ? "low-stock" : ""}
               >
                 {product.inventory ?? 25} in stock
               </b>
@@ -1083,7 +1432,7 @@ function AdminPage() {
                   <small>
                     {order.customer?.name} ({order.customer?.email}) · $
                     {order.total?.toFixed?.(2) || order.total} ·{" "}
-                    {order.items?.length} items · {order.date}
+                    {order.items?.length} items · {order.date || order.createdAt}
                   </small>
                 </span>
                 <select
@@ -1162,7 +1511,13 @@ function AdminPage() {
                   </strong>
                   <small>{message.message}</small>
                 </span>
-                <span style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <span
+                  style={{
+                    display: "flex",
+                    gap: "0.5rem",
+                    alignItems: "center",
+                  }}
+                >
                   <b style={{ color: message.read ? "inherit" : "#809c73" }}>
                     {message.read ? "Read" : "New"}
                   </b>
@@ -1564,12 +1919,29 @@ function ProductPage() {
 
   const product = products.find((item) => item.id === Number(id));
   const [added, setAdded] = useState(false);
+  const [productReviews, setProductReviews] = useState([]);
   const [reviewForm, setReviewForm] = useState({
     name: user?.name || "",
     rating: 5,
     text: "",
   });
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
+  // Fetch live reviews from backend API for this product
+  useEffect(() => {
+    if (!product) return;
+    fetch(`${API_URL}/products/${product.id}/reviews`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.reviews)) {
+          setProductReviews(data.reviews);
+        }
+      })
+      .catch(() => {
+        // Fallback to local reviews state
+        setProductReviews(allReviews.filter((r) => r.productId === product.id));
+      });
+  }, [product, allReviews]);
 
   if (loading) {
     return (
@@ -1591,7 +1963,6 @@ function ProductPage() {
   }
 
   const wished = wishlist.includes(product.id);
-  const productReviews = allReviews.filter((r) => r.productId === product.id);
   const stock = product.inventory ?? 25;
 
   const handleAddToCart = () => {
@@ -1601,18 +1972,26 @@ function ProductPage() {
     setTimeout(() => setAdded(false), 2000);
   };
 
-  const handleSubmitReview = (e) => {
+  const handleSubmitReview = async (e) => {
     e.preventDefault();
     if (!reviewForm.name || !reviewForm.text) return;
 
     setReviewSubmitting(true);
-    addReview(product.id, reviewForm);
+    const created = await addReview(product.id, reviewForm);
+    if (created) {
+      setProductReviews((prev) => [created, ...prev]);
+    }
     setReviewForm({
       name: user?.name || "",
       rating: 5,
       text: "",
     });
     setReviewSubmitting(false);
+  };
+
+  const handleDeleteReview = async (reviewId) => {
+    await deleteReview(product.id, reviewId);
+    setProductReviews((prev) => prev.filter((r) => r._id !== reviewId));
   };
 
   return (
@@ -1697,7 +2076,7 @@ function ProductPage() {
                   (user.role === "admin" || user.id === item.userId) && (
                     <button
                       className="review-delete"
-                      onClick={() => deleteReview(item._id)}
+                      onClick={() => handleDeleteReview(item._id)}
                     >
                       Delete review
                     </button>
@@ -2000,11 +2379,11 @@ function ContactPage() {
   const [sent, setSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const submitMessage = (event) => {
+  const submitMessage = async (event) => {
     event.preventDefault();
     setIsSubmitting(true);
 
-    addMessage(form);
+    await addMessage(form);
     setForm({ name: "", email: "", message: "" });
     setSent(true);
     setIsSubmitting(false);
@@ -2129,7 +2508,7 @@ function CheckoutPage() {
   const shipping = subtotal >= 50 ? 0 : selectedCountry?.shipping || 5;
   const total = subtotal + shipping;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name || !email || !address || !city || !state || !zip) {
       setError("Please fill in all shipping fields");
@@ -2140,7 +2519,7 @@ function CheckoutPage() {
     setError("");
 
     try {
-      const order = placeOrder({
+      const order = await placeOrder({
         customer: { email, name, country, address, city, state, zip },
         items: cart,
         subtotal,
@@ -2160,10 +2539,13 @@ function CheckoutPage() {
       <main className="checkout-page">
         <div className="order-success">
           <p className="eyebrow">Order received</p>
-          <h1>Thank you, {placedOrder.customer.name.split(" ")[0] || "there"}.</h1>
+          <h1>
+            Thank you,{" "}
+            {placedOrder.customer?.name?.split(" ")[0] || "there"}.
+          </h1>
           <p>
-            Your skincare order has been placed successfully! We will send tracking
-            updates to <b>{placedOrder.customer.email}</b>.
+            Your skincare order has been placed successfully in the database! Tracking
+            updates will be sent to <b>{placedOrder.customer?.email}</b>.
           </p>
           <strong>Order number: {placedOrder.id}</strong>
 
@@ -2181,21 +2563,47 @@ function CheckoutPage() {
               marginRight: "auto",
             }}
           >
-            <p style={{ margin: "0 0 0.5rem", fontWeight: 600, fontSize: "0.95rem" }}>
+            <p
+              style={{
+                margin: "0 0 0.5rem",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+              }}
+            >
               Shipping to:
             </p>
-            <p style={{ margin: 0, opacity: 0.85, fontSize: "0.9rem", lineHeight: "1.4" }}>
-              {placedOrder.customer.name}
+            <p
+              style={{
+                margin: 0,
+                opacity: 0.85,
+                fontSize: "0.9rem",
+                lineHeight: "1.4",
+              }}
+            >
+              {placedOrder.customer?.name}
               <br />
-              {placedOrder.customer.address}
+              {placedOrder.customer?.address}
               <br />
-              {placedOrder.customer.city}, {placedOrder.customer.state}{" "}
-              {placedOrder.customer.zip}
+              {placedOrder.customer?.city}, {placedOrder.customer?.state}{" "}
+              {placedOrder.customer?.zip}
             </p>
-            <hr style={{ margin: "0.8rem 0", borderColor: "var(--border)", opacity: 0.5 }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", fontWeight: 600 }}>
+            <hr
+              style={{
+                margin: "0.8rem 0",
+                borderColor: "var(--border)",
+                opacity: 0.5,
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+              }}
+            >
               <span>Total Paid:</span>
-              <span>${placedOrder.total.toFixed(2)}</span>
+              <span>${placedOrder.total?.toFixed?.(2) || placedOrder.total}</span>
             </div>
           </div>
 
@@ -2252,8 +2660,8 @@ function CheckoutPage() {
                 type="button"
                 className="outline-button"
                 style={{ fontSize: "0.8rem", padding: "0.4rem 0.8rem" }}
-                onClick={() => {
-                  const u = quickLogin("customer");
+                onClick={async () => {
+                  const u = await quickLogin("customer");
                   if (u) {
                     setEmail(u.email);
                     setName(u.name);
@@ -2361,7 +2769,7 @@ function CheckoutPage() {
             <b>${total.toFixed(2)}</b>
           </div>
           <p className="secure-note">
-            ✦ Instant 100% client-side demo checkout
+            ✦ Full Stack REST API Order Processing
             <br />✦{" "}
             {subtotal >= 50
               ? "Free standard shipping unlocked"

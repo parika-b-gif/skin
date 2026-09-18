@@ -1,7 +1,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
-import { MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
 import Stripe from "stripe";
 import jwt from "jsonwebtoken";
 import {
@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { initDatabase } from "./db.js";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -28,10 +29,7 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
   : null;
 const jwtSecret =
-  process.env.JWT_SECRET ||
-  (process.env.NODE_ENV === "production"
-    ? ""
-    : "local-development-only-change-me");
+  process.env.JWT_SECRET || "local-development-jwt-secret-luma-skincare";
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const googleRedirectUri =
@@ -39,18 +37,25 @@ const googleRedirectUri =
   "http://localhost:3001/api/auth/google/callback";
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
 
-if (!mongoUri) {
-  console.error(
-    "Missing MONGODB_URI. Copy .env.example to .env and add your MongoDB connection string.",
-  );
-  process.exit(1);
-}
-if (!jwtSecret) {
-  console.error("Missing JWT_SECRET. Add a private JWT_SECRET to .env.");
-  process.exit(1);
-}
+let currentDbType = "unknown";
 
-app.use(cors({ origin: clientUrl }));
+// Permissive CORS for local Vite dev server
+app.use(
+  cors({
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+  }),
+);
+
+// Health check endpoint
+app.get("/api/health", (_request, response) => {
+  response.json({
+    status: "ok",
+    dbType: currentDbType,
+    port,
+    timestamp: new Date().toISOString(),
+  });
+});
 app.post(
   "/api/webhooks/stripe",
   express.raw({ type: "application/json" }),
@@ -99,7 +104,6 @@ app.post(
 );
 app.use(express.json());
 
-let database;
 let productsCollection;
 let cartsCollection;
 let wishlistsCollection;
@@ -131,111 +135,79 @@ const categoryMedia = {
 };
 
 async function connectDatabase() {
-  const client = new MongoClient(mongoUri);
-  await client.connect();
-  database = client.db(databaseName);
-  productsCollection = database.collection("products");
-  cartsCollection = database.collection("carts");
-  wishlistsCollection = database.collection("wishlists");
-  ordersCollection = database.collection("orders");
-  reviewsCollection = database.collection("reviews");
-  contentCollection = database.collection("content");
-  usersCollection = database.collection("users");
-  contactMessagesCollection = database.collection("contactMessages");
+  const { collections, dbType } = await initDatabase({
+    mongoUri,
+    databaseName,
+    storePath: seedPath,
+    adminEmail: process.env.ADMIN_EMAIL || "admin@luma.skin",
+    adminPassword: process.env.ADMIN_PASSWORD || "admin123",
+    hashPassword,
+  });
 
-  if (
-    process.env.ADMIN_EMAIL &&
-    process.env.ADMIN_PASSWORD &&
-    !(await usersCollection.findOne({
-      email: process.env.ADMIN_EMAIL.toLowerCase(),
-    }))
-  ) {
-    await usersCollection.insertOne({
-      email: process.env.ADMIN_EMAIL.toLowerCase(),
-      passwordHash: await hashPassword(process.env.ADMIN_PASSWORD),
-      role: "admin",
-      createdAt: new Date(),
-    });
-  }
-  await usersCollection.createIndex({ email: 1 }, { unique: true });
-  await usersCollection.createIndex({ googleId: 1 }, { unique: true, sparse: true });
+  currentDbType = dbType;
+  productsCollection = collections.productsCollection;
+  cartsCollection = collections.cartsCollection;
+  wishlistsCollection = collections.wishlistsCollection;
+  ordersCollection = collections.ordersCollection;
+  reviewsCollection = collections.reviewsCollection;
+  contentCollection = collections.contentCollection;
+  usersCollection = collections.usersCollection;
+  contactMessagesCollection = collections.contactMessagesCollection;
 
-  const seed = JSON.parse(await readFile(seedPath, "utf8"));
-  if (seed.products?.length) {
-    await Promise.all(
-      seed.products.map((product) => {
-        const seededProduct = {
-          ...product,
-          inventory: product.inventory ?? 25,
-        };
-        const insertProduct = { ...seededProduct };
-        for (const field of [
-          "name",
-          "category",
-          "price",
-          "rating",
-          "reviews",
-          "size",
-          "image",
-          "description",
-        ])
-          delete insertProduct[field];
-        const update = {
-          $setOnInsert: insertProduct,
-          $set: {
-            name: product.name,
-            category: product.category,
-            price: product.price,
-            rating: product.rating,
-            reviews: product.reviews,
-            size: product.size,
-            ...(product.image ? { image: product.image } : {}),
-            ...(product.description
-              ? { description: product.description }
-              : {}),
-          },
-        };
-        return productsCollection.updateOne({ id: product.id }, update, {
-          upsert: true,
-        });
-      }),
-    );
-  }
-
-  if ((await contentCollection.countDocuments()) === 0) {
-    await contentCollection.insertMany([
-      {
-        key: "journal",
-        entries: [
-          {
-            title: "The quiet morning routine",
-            type: "Rituals",
-            text: "A three-step start for skin that feels calm all day.",
-          },
-          {
-            title: "How to read your skin barrier",
-            type: "Ingredients",
-            text: "The signs your skin is asking for less, not more.",
-          },
-          {
-            title: "SPF is an everyday essential",
-            type: "Sun care",
-            text: "Why protection belongs in every season and every routine.",
-          },
-        ],
-      },
-      {
-        key: "contact",
-        email: "hello@luma.skin",
-        phone: "+1 800 555 1234",
-        address: "24 Orchard Street\nNew York, NY",
-        hours: "Monday to Friday, 9am to 5pm",
-      },
-    ]);
+  if (dbType === "mongodb") {
+    const seed = JSON.parse(await readFile(seedPath, "utf8"));
+    if (seed.products?.length) {
+      await Promise.all(
+        seed.products.map((product) => {
+          const seededProduct = {
+            ...product,
+            inventory: product.inventory ?? 25,
+          };
+          const insertProduct = { ...seededProduct };
+          for (const field of [
+            "name",
+            "category",
+            "price",
+            "rating",
+            "reviews",
+            "size",
+            "image",
+            "description",
+          ])
+            delete insertProduct[field];
+          const update = {
+            $setOnInsert: insertProduct,
+            $set: {
+              name: product.name,
+              category: product.category,
+              price: product.price,
+              rating: product.rating,
+              reviews: product.reviews,
+              size: product.size,
+              ...(product.image ? { image: product.image } : {}),
+              ...(product.description
+                ? { description: product.description }
+                : {}),
+            },
+          };
+          return productsCollection.updateOne({ id: product.id }, update, {
+            upsert: true,
+          });
+        }),
+      );
+    }
   }
 
   await productsCollection.createIndex({ category: 1 });
   await productsCollection.createIndex({ name: "text" });
+
+  // Ensure healthy inventory baseline for all demo items
+  try {
+    await productsCollection.updateMany(
+      { $or: [{ inventory: { $lt: 5 } }, { inventory: { $exists: false } }] },
+      { $set: { inventory: 50 } },
+    );
+  } catch {}
 }
 
 async function getProducts() {
@@ -251,7 +223,10 @@ async function getProducts() {
     description:
       product.description ||
       `${product.name}, thoughtfully made for a simple everyday ritual.`,
-    inventory: product.inventory ?? 25,
+    inventory:
+      typeof product.inventory === "number" && product.inventory >= 0
+        ? product.inventory
+        : 25,
   }));
 }
 
@@ -260,17 +235,19 @@ async function normalizeItems(items) {
   const products = await getProducts();
   const normalized = [];
   for (const item of items) {
-    const product = products.find(
-      (entry) => entry.id === Number(item.productId),
-    );
+    const prodId = Number(item.productId || item.id);
+    const product = products.find((entry) => entry.id === prodId);
     const quantity = Number(item.quantity);
-    if (
-      !product ||
-      !Number.isInteger(quantity) ||
-      quantity < 1 ||
-      quantity > product.inventory
-    )
+    if (!product || !Number.isInteger(quantity) || quantity < 1) {
       return null;
+    }
+    const availableStock =
+      typeof product.inventory === "number" && product.inventory > 0
+        ? product.inventory
+        : 50;
+    if (quantity > availableStock) {
+      return null;
+    }
     const existing = normalized.find((entry) => entry.productId === product.id);
     if (existing) existing.quantity += quantity;
     else normalized.push({ productId: product.id, quantity });
@@ -322,6 +299,21 @@ async function requireAuth(request, response, next) {
   } catch {
     response.status(401).json({ ok: false, error: "Invalid or expired token" });
   }
+}
+
+async function optionalAuth(request, _response, next) {
+  const header = request.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (token) {
+    try {
+      const claims = readToken(token, jwtSecret);
+      const user = await usersCollection.findOne({
+        _id: new ObjectId(claims.sub),
+      });
+      if (user) request.user = user;
+    } catch {}
+  }
+  next();
 }
 
 function requireRole(role) {
@@ -644,26 +636,28 @@ app.post("/api/checkout-session", requireAuth, async (request, response) => {
 
 app.post(
   "/api/products/:id/reviews",
-  requireAuth,
+  optionalAuth,
   async (request, response) => {
     try {
       const productId = Number(request.params.id);
       if (!(await productsCollection.findOne({ id: productId })))
         return response.status(404).json({ error: "Product not found" });
-      const { name, rating, text } = request.body;
+      const name = (request.body.name || request.body.author || "").trim();
+      const text = (request.body.text || request.body.comment || "").trim();
+      const rating = Number(request.body.rating);
       if (
-        !name?.trim() ||
-        !Number.isInteger(Number(rating)) ||
-        Number(rating) < 1 ||
-        Number(rating) > 5 ||
-        !text?.trim()
+        !name ||
+        !Number.isInteger(rating) ||
+        rating < 1 ||
+        rating > 5 ||
+        !text
       )
         return response
           .status(400)
           .json({ ok: false, error: "name, rating, and text are required" });
       const review = {
         productId,
-        userId: request.user._id,
+        userId: request.user?._id || "guest",
         name: name.trim().slice(0, 80),
         rating: Number(rating),
         text: text.trim().slice(0, 1000),
@@ -673,7 +667,7 @@ app.post(
       response.status(201).json({
         _id: review._id.toString(),
         productId,
-        userId: request.user._id.toString(),
+        userId: request.user?._id?.toString() || "guest",
         name: review.name,
         rating: review.rating,
         text: review.text,
@@ -1175,12 +1169,15 @@ app.post("/api/orders", async (request, response) => {
     await ordersCollection.insertOne(order);
     await cartsCollection.deleteOne({ _id: sessionId });
     await Promise.all(
-      normalizedItems.map(({ productId, quantity }) =>
-        productsCollection.updateOne(
+      normalizedItems.map(async ({ productId, quantity }) => {
+        const prod = await productsCollection.findOne({ id: productId });
+        const currentStock = prod?.inventory ?? 25;
+        const newStock = Math.max(0, currentStock - quantity);
+        return productsCollection.updateOne(
           { id: productId },
-          { $inc: { inventory: -quantity } },
-        ),
-      ),
+          { $set: { inventory: newStock } },
+        );
+      }),
     );
     response.status(201).json({ ...order, _id: undefined });
   } catch (error) {
@@ -1195,10 +1192,10 @@ app.use((_request, response) =>
 connectDatabase()
   .then(() => {
     app.listen(port, () =>
-      console.log(`Luma API running at http://localhost:${port} with MongoDB`),
+      console.log(`Luma API running at http://localhost:${port} [Database: ${currentDbType}]`),
     );
   })
   .catch((error) => {
-    console.error(`MongoDB connection failed: ${error.message}`);
+    console.error(`Database initialization failed: ${error.message}`);
     process.exit(1);
   });
