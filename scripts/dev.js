@@ -11,7 +11,7 @@ const server = spawn("node", ["--watch", "server/index.js"], {
   env: process.env,
 });
 
-const client = spawn("npx", ["vite", "--host", "127.0.0.1", "--port", "5173"], {
+const client = spawn("npx", ["vite", "--host", "--port", "5173"], {
   stdio: ["inherit", "pipe", "pipe"],
   env: process.env,
 });
