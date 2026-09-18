@@ -1,6 +1,5 @@
 import React, {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -9,37 +8,39 @@ import React, {
 import {
   BrowserRouter,
   Link,
+  Navigate,
   Route,
   Routes,
-  useLocation,
   useNavigate,
   useParams,
-  useSearchParams,
 } from "react-router-dom";
 import {
+  Activity,
   ArrowRight,
-  ChevronDown,
-  Heart,
-  Menu,
+  BarChart3,
+  BrainCircuit,
+  Check,
+  Code2,
+  Copy,
+  Download,
+  Eye,
+  File,
+  FileCode,
+  FileImage,
+  FileText,
+  FolderGit2,
   Moon,
   Plus,
   Search,
-  ShoppingBag,
+  Settings,
+  Share2,
   Sparkles,
   Sun,
   Trash2,
+  UploadCloud,
+  Users,
+  X,
 } from "lucide-react";
-import {
-  initialProducts,
-  categories,
-  countries,
-  initialJournal,
-  initialContact,
-  initialMessages,
-  initialReviews,
-  initialOrders,
-  defaultUsers,
-} from "./mockData.js";
 import "./App.css";
 
 const API_URL =
@@ -47,2784 +48,2280 @@ const API_URL =
   (typeof window !== "undefined" && window.location.hostname
     ? `http://${window.location.hostname}:3001/api`
     : "http://localhost:3001/api");
-const ShopContext = createContext(null);
 
-function loadStorage(key, fallback) {
-  try {
-    const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
-  } catch {
-    return fallback;
-  }
+const AuthContext = createContext(null);
+
+function useAuth() {
+  return useContext(AuthContext);
 }
 
-function saveStorage(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error(`Failed saving to ${key}:`, err);
-  }
-}
+// Simple safe markdown parser & renderer
+function renderMarkdown(content = "") {
+  if (!content) return null;
+  const lines = content.split("\n");
+  const elements = [];
+  let inCodeBlock = false;
+  let codeBlockContent = [];
+  let codeBlockLang = "";
 
-function ScrollToTop() {
-  const { pathname } = useLocation();
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-  return null;
-}
-
-function ShopProvider({ children }) {
-  const [products, setProducts] = useState(() =>
-    loadStorage("luma-products", initialProducts),
-  );
-  const [cart, setCart] = useState(() => loadStorage("luma-cart", []));
-  const [wishlist, setWishlist] = useState(() =>
-    loadStorage("luma-wishlist", []),
-  );
-  const [users] = useState(() =>
-    loadStorage("luma-users", defaultUsers),
-  );
-  const [user, setUser] = useState(() => loadStorage("luma-user", null));
-  const [token, setToken] = useState(
-    () => localStorage.getItem("luma-token") || "",
-  );
-  const [orders, setOrders] = useState(() =>
-    loadStorage("luma-orders", initialOrders),
-  );
-  const [reviews, setReviews] = useState(() =>
-    loadStorage("luma-reviews", initialReviews),
-  );
-  const [messages, setMessages] = useState(() =>
-    loadStorage("luma-contact-messages", initialMessages),
-  );
-  const [journal, setJournal] = useState(() =>
-    loadStorage("luma-journal", initialJournal),
-  );
-  const [contact] = useState(initialContact);
-  const [apiError, setApiError] = useState("");
-  const [backendStatus, setBackendStatus] = useState("checking");
-  const [darkMode, setDarkMode] = useState(
-    () => localStorage.getItem("luma-theme") === "dark",
-  );
-  const [loading, setLoading] = useState(false);
-
-  const [sessionId] = useState(() => {
-    let sid = localStorage.getItem("session-id");
-    if (!sid) {
-      sid =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : "sid-" + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem("session-id", sid);
+  lines.forEach((line, idx) => {
+    if (line.startsWith("```")) {
+      if (inCodeBlock) {
+        elements.push(
+          <pre key={`code-${idx}`} className={`code-pre ${codeBlockLang ? `lang-${codeBlockLang}` : ""}`}>
+            <code>{codeBlockContent.join("\n")}</code>
+          </pre>,
+        );
+        codeBlockContent = [];
+        inCodeBlock = false;
+        codeBlockLang = "";
+      } else {
+        inCodeBlock = true;
+        codeBlockLang = line.slice(3).trim();
+      }
+      return;
     }
-    return sid;
+
+    if (inCodeBlock) {
+      codeBlockContent.push(line);
+      return;
+    }
+
+    if (line.startsWith("# ")) {
+      elements.push(<h1 key={idx}>{line.slice(2)}</h1>);
+    } else if (line.startsWith("## ")) {
+      elements.push(<h2 key={idx}>{line.slice(3)}</h2>);
+    } else if (line.startsWith("### ")) {
+      elements.push(<h3 key={idx}>{line.slice(4)}</h3>);
+    } else if (line.startsWith("- [ ] ")) {
+      elements.push(
+        <div key={idx} className="task-item">
+          <input type="checkbox" readOnly checked={false} />
+          <span>{line.slice(6)}</span>
+        </div>,
+      );
+    } else if (line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
+      elements.push(
+        <div key={idx} className="task-item checked">
+          <input type="checkbox" readOnly checked={true} />
+          <span>{line.slice(6)}</span>
+        </div>,
+      );
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      elements.push(
+        <li key={idx} style={{ marginLeft: "20px" }}>
+          {formatInline(line.slice(2))}
+        </li>,
+      );
+    } else if (/^\d+\.\s/.test(line)) {
+      const text = line.replace(/^\d+\.\s/, "");
+      elements.push(
+        <li key={idx} style={{ marginLeft: "20px", listStyleType: "decimal" }}>
+          {formatInline(text)}
+        </li>,
+      );
+    } else if (line.startsWith("> ")) {
+      elements.push(
+        <blockquote key={idx}>{formatInline(line.slice(2))}</blockquote>,
+      );
+    } else if (line.trim() === "---") {
+      elements.push(
+        <hr key={idx} style={{ margin: "16px 0", borderColor: "var(--border)" }} />,
+      );
+    } else if (line.trim()) {
+      elements.push(<p key={idx}>{formatInline(line)}</p>);
+    }
   });
 
-  const authHeaders = useCallback(
-    () => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  );
-
-  // Sync state to localStorage cache
-  useEffect(() => {
-    saveStorage("luma-products", products);
-  }, [products]);
-
-  useEffect(() => {
-    saveStorage("luma-cart", cart);
-  }, [cart]);
-
-  useEffect(() => {
-    saveStorage("luma-wishlist", wishlist);
-  }, [wishlist]);
-
-  useEffect(() => {
-    saveStorage("luma-users", users);
-  }, [users]);
-
-  useEffect(() => {
-    saveStorage("luma-user", user);
-  }, [user]);
-
-  useEffect(() => {
-    saveStorage("luma-orders", orders);
-  }, [orders]);
-
-  useEffect(() => {
-    saveStorage("luma-reviews", reviews);
-  }, [reviews]);
-
-  useEffect(() => {
-    saveStorage("luma-contact-messages", messages);
-  }, [messages]);
-
-  useEffect(() => {
-    saveStorage("luma-journal", journal);
-  }, [journal]);
-
-  useEffect(() => {
-    localStorage.setItem("luma-theme", darkMode ? "dark" : "light");
-    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
-  }, [darkMode]);
-
-  // Initial Backend API Handshake and Data Sync
-  useEffect(() => {
-    fetch(`${API_URL}/health`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.status === "ok") {
-          setBackendStatus("connected");
-        }
-      })
-      .catch(() => setBackendStatus("offline"));
-
-    // Fetch live products from backend
-    fetch(`${API_URL}/products`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.products) && data.products.length > 0) {
-          setProducts(data.products);
-        }
-      })
-      .catch(() => {});
-
-    // Fetch journal from backend
-    fetch(`${API_URL}/content/journal`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.entries) && data.entries.length > 0) {
-          setJournal(data.entries);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Sync user profile when token is active
-  useEffect(() => {
-    if (!token) return;
-    fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.ok && res.data?.user) {
-          setUser(res.data.user);
-        } else {
-          localStorage.removeItem("luma-token");
-          setToken("");
-          setUser(null);
-        }
-      })
-      .catch(() => {});
-  }, [token]);
-
-  // Backend Cart Sync Helper
-  const syncCartToBackend = useCallback(
-    (nextCart) => {
-      fetch(`${API_URL}/cart/${sessionId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: nextCart.map((item) => ({
-            productId: item.id,
-            quantity: item.quantity,
-          })),
-        }),
-      }).catch(() => {});
-    },
-    [sessionId],
-  );
-
-  // Cart operations
-  const addToCart = useCallback(
-    (product) => {
-      setCart((prev) => {
-        const existing = prev.find((item) => item.id === product.id);
-        const next = existing
-          ? prev.map((item) =>
-              item.id === product.id
-                ? { ...item, quantity: item.quantity + 1 }
-                : item,
-            )
-          : [...prev, { ...product, quantity: 1 }];
-        syncCartToBackend(next);
-        return next;
-      });
-    },
-    [syncCartToBackend],
-  );
-
-  const updateQuantity = useCallback(
-    (id, amount) => {
-      setCart((prev) => {
-        const next = prev
-          .map((item) =>
-            item.id === id
-              ? { ...item, quantity: Math.max(0, item.quantity + amount) }
-              : item,
-          )
-          .filter((item) => item.quantity > 0);
-        syncCartToBackend(next);
-        return next;
-      });
-    },
-    [syncCartToBackend],
-  );
-
-  const removeFromCart = useCallback(
-    (id) => {
-      setCart((prev) => {
-        const next = prev.filter((item) => item.id !== id);
-        syncCartToBackend(next);
-        return next;
-      });
-    },
-    [syncCartToBackend],
-  );
-
-  const clearCart = useCallback(() => {
-    setCart([]);
-    syncCartToBackend([]);
-  }, [syncCartToBackend]);
-
-  // Wishlist operations
-  const toggleWishlist = useCallback(
-    (id) => {
-      setWishlist((prev) => {
-        const next = prev.includes(id)
-          ? prev.filter((item) => item !== id)
-          : [...prev, id];
-        fetch(`${API_URL}/wishlist/${sessionId}/${id}`, {
-          method: "POST",
-        }).catch(() => {});
-        return next;
-      });
-    },
-    [sessionId],
-  );
-
-  // Auth operations
-  const login = useCallback(async ({ email, password }) => {
-    try {
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Login failed");
-      }
-      localStorage.setItem("luma-token", data.data.token);
-      setToken(data.data.token);
-      setUser(data.data.user);
-      return data.data.user;
-    } catch (err) {
-      // Offline / Demo fallback
-      const normalizedEmail = email.trim().toLowerCase();
-      if (
-        (normalizedEmail === "admin@luma.skin" && password === "admin123") ||
-        (normalizedEmail === "admin@example.com" &&
-          password === "use_a_strong_unique_password")
-      ) {
-        const adminUser = {
-          id: "admin-id",
-          name: "Luma Admin",
-          email: normalizedEmail,
-          role: "admin",
-        };
-        setUser(adminUser);
-        return adminUser;
-      }
-      if (normalizedEmail === "alia@luma.skin" && password === "password123") {
-        const custUser = {
-          id: "cust-id",
-          name: "Alia Stone",
-          email: normalizedEmail,
-          role: "customer",
-        };
-        setUser(custUser);
-        return custUser;
-      }
-      throw err;
-    }
-  }, []);
-
-  const register = useCallback(async ({ email, password, name }) => {
-    try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Registration failed");
-      }
-      localStorage.setItem("luma-token", data.data.token);
-      setToken(data.data.token);
-      setUser(data.data.user);
-      return data.data.user;
-    } catch (err) {
-      console.warn("Offline user registration fallback:", err?.message);
-      const newUser = {
-        id: "user-" + Date.now(),
-        name: name || email.split("@")[0],
-        email: email.trim().toLowerCase(),
-        role: "customer",
-      };
-      setUser(newUser);
-      return newUser;
-    }
-  }, []);
-
-  const quickLogin = useCallback(
-    async (role = "customer") => {
-      if (role === "admin") {
-        return await login({
-          email: "admin@luma.skin",
-          password: "admin123",
-        }).catch(() => {
-          const fallbackAdmin = {
-            id: "user-admin",
-            name: "Luma Admin",
-            email: "admin@luma.skin",
-            role: "admin",
-          };
-          setUser(fallbackAdmin);
-          return fallbackAdmin;
-        });
-      } else {
-        return await login({
-          email: "alia@luma.skin",
-          password: "password123",
-        }).catch(() => {
-          const fallbackCust = {
-            id: "user-customer",
-            name: "Alia Stone",
-            email: "alia@luma.skin",
-            role: "customer",
-          };
-          setUser(fallbackCust);
-          return fallbackCust;
-        });
-      }
-    },
-    [login],
-  );
-
-  const completeGoogleLogin = useCallback(async () => {
-    const googleUser = {
-      id: "user-google",
-      name: "Google Shopper",
-      email: "shopper@gmail.com",
-      role: "customer",
-    };
-    setUser(googleUser);
-    return googleUser;
-  }, []);
-
-  const logout = useCallback(() => {
-    if (token) {
-      fetch(`${API_URL}/auth/logout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {});
-    }
-    localStorage.removeItem("luma-token");
-    setToken("");
-    setUser(null);
-  }, [token]);
-
-  // Order placement via Backend API
-  const placeOrder = useCallback(
-    async ({ customer, items, subtotal, shipping, total }) => {
-      try {
-        const response = await fetch(`${API_URL}/orders`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders(),
-          },
-          body: JSON.stringify({
-            sessionId,
-            customer,
-            items: items.map((it) => ({
-              productId: it.id,
-              quantity: it.quantity,
-            })),
-          }),
-        });
-
-        const data = await response.json();
-        if (response.ok && data?.id) {
-          setOrders((prev) => [data, ...prev]);
-          clearCart();
-          return data;
-        }
-      } catch (err) {
-        console.warn("[Orders] Backend order fallback:", err);
-      }
-
-      // Offline fallback
-      const orderId = `LUM-${Math.floor(100000 + Math.random() * 900000)}`;
-      const now = new Date();
-      const localOrder = {
-        id: orderId,
-        orderNumber: orderId,
-        createdAt: now.toISOString(),
-        date: now.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
-        customer,
-        items: items.map((item) => ({ ...item })),
-        subtotal,
-        shipping,
-        total,
-        status: "processing",
-      };
-
-      setProducts((prev) =>
-        prev.map((p) => {
-          const cartItem = items.find((ci) => ci.id === p.id);
-          if (cartItem) {
-            const nextStock = Math.max(0, (p.inventory ?? 25) - cartItem.quantity);
-            return { ...p, inventory: nextStock };
-          }
-          return p;
-        }),
-      );
-
-      setOrders((prev) => [localOrder, ...prev]);
-      clearCart();
-      return localOrder;
-    },
-    [sessionId, authHeaders, clearCart],
-  );
-
-  // Review operations via Backend API
-  const addReview = useCallback(
-    async (productId, { name, rating, text }) => {
-      try {
-        const response = await fetch(`${API_URL}/products/${productId}/reviews`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders(),
-          },
-          body: JSON.stringify({ name, rating, text }),
-        });
-        const savedReview = await response.json();
-        if (response.ok && savedReview?._id) {
-          setReviews((prev) => [savedReview, ...prev]);
-          return savedReview;
-        }
-      } catch (err) {
-        console.warn("[Reviews] Backend review fallback:", err);
-      }
-
-      const newRev = {
-        _id: `rev-${Date.now()}`,
-        productId,
-        userId: user?.id || "guest",
-        name: name.trim(),
-        rating: Number(rating),
-        text: text.trim(),
-        createdAt: new Date().toISOString(),
-      };
-
-      setReviews((prev) => [newRev, ...prev]);
-      return newRev;
-    },
-    [authHeaders, user],
-  );
-
-  const deleteReview = useCallback(
-    async (productId, reviewId) => {
-      try {
-        await fetch(`${API_URL}/products/${productId}/reviews/${reviewId}`, {
-          method: "DELETE",
-          headers: authHeaders(),
-        });
-      } catch (err) {
-        console.warn("[Reviews] Backend delete review fallback:", err);
-      }
-      setReviews((prev) => prev.filter((r) => r._id !== reviewId));
-    },
-    [authHeaders],
-  );
-
-  // Contact inquiries via Backend API
-  const addMessage = useCallback(async ({ name, email, message }) => {
-    try {
-      await fetch(`${API_URL}/contact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, message }),
-      });
-    } catch (err) {
-      console.warn("[Contact] Backend message fallback:", err);
-    }
-
-    const newMsg = {
-      _id: `msg-${Date.now()}`,
-      name,
-      email,
-      message,
-      read: false,
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [newMsg, ...prev]);
-    return newMsg;
-  }, []);
-
-  // Admin operations via Backend API
-  const loadAdminData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const headers = authHeaders();
-      const [sumRes, prodRes, ordRes, revRes, msgRes, jrnRes] =
-        await Promise.all([
-          fetch(`${API_URL}/admin/summary`, { headers }).then((r) => r.json()),
-          fetch(`${API_URL}/admin/products`, { headers }).then((r) => r.json()),
-          fetch(`${API_URL}/admin/orders`, { headers }).then((r) => r.json()),
-          fetch(`${API_URL}/admin/reviews`, { headers }).then((r) => r.json()),
-          fetch(`${API_URL}/admin/contact-messages`, { headers }).then((r) =>
-            r.json(),
-          ),
-          fetch(`${API_URL}/admin/content/journal`, { headers }).then((r) =>
-            r.json(),
-          ),
-        ]);
-
-      if (prodRes?.ok && prodRes.data) setProducts(prodRes.data);
-      if (ordRes?.ok && ordRes.data) setOrders(ordRes.data);
-      if (revRes?.ok && revRes.data) setReviews(revRes.data);
-      if (msgRes?.ok && msgRes.data) setMessages(msgRes.data);
-      if (jrnRes?.ok && jrnRes.data?.entries) setJournal(jrnRes.data.entries);
-      return sumRes?.data || null;
-    } catch {
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [authHeaders]);
-
-  const updateStock = useCallback(
-    async (product, newStock) => {
-      try {
-        await fetch(`${API_URL}/admin/products/${product.id}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders(),
-          },
-          body: JSON.stringify({ inventory: newStock }),
-        });
-      } catch (err) {
-        console.warn("[Admin] Stock update fallback:", err);
-      }
-      setProducts((prev) =>
-        prev.map((p) =>
-          p.id === product.id ? { ...p, inventory: newStock } : p,
-        ),
-      );
-    },
-    [authHeaders],
-  );
-
-  const createProduct = useCallback(
-    async (productData) => {
-      try {
-        const res = await fetch(`${API_URL}/admin/products`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders(),
-          },
-          body: JSON.stringify({
-            ...productData,
-            price: Number(productData.price),
-            inventory: Number(productData.inventory),
-          }),
-        });
-        const json = await res.json();
-        if (res.ok && json.data) {
-          setProducts((prev) => [...prev, json.data]);
-          return json.data;
-        }
-      } catch (err) {
-        console.warn("[Admin] Create product fallback:", err);
-      }
-
-      const newProduct = {
-        ...productData,
-        id: Date.now(),
-        rating: 5.0,
-        reviews: 0,
-        image:
-          productData.image ||
-          "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85",
-        size: productData.size || "50 ml",
-        description:
-          productData.description ||
-          "A gentle botanical formulation designed for daily barrier nourishment.",
-        inventory: Number(productData.inventory) || 25,
-        price: Number(productData.price) || 30,
-      };
-      setProducts((prev) => [...prev, newProduct]);
-      return newProduct;
-    },
-    [authHeaders],
-  );
-
-  const deleteProduct = useCallback(
-    async (product) => {
-      try {
-        await fetch(`${API_URL}/admin/products/${product.id}`, {
-          method: "DELETE",
-          headers: authHeaders(),
-        });
-      } catch (err) {
-        console.warn("[Admin] Delete product fallback:", err);
-      }
-      setProducts((prev) => prev.filter((p) => p.id !== product.id));
-    },
-    [authHeaders],
-  );
-
-  const updateOrderStatus = useCallback(
-    async (order, status) => {
-      try {
-        await fetch(`${API_URL}/admin/orders/${order.id}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders(),
-          },
-          body: JSON.stringify({ status }),
-        });
-      } catch (err) {
-        console.warn("[Admin] Order status fallback:", err);
-      }
-      setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status } : o)),
-      );
-    },
-    [authHeaders],
-  );
-
-  const updateMessage = useCallback(
-    async (message, action) => {
-      try {
-        if (action === "delete") {
-          await fetch(`${API_URL}/admin/contact-messages/${message._id}`, {
-            method: "DELETE",
-            headers: authHeaders(),
-          });
-        } else {
-          await fetch(`${API_URL}/admin/contact-messages/${message._id}`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
-            body: JSON.stringify({ read: !message.read }),
-          });
-        }
-      } catch (err) {
-        console.warn("[Admin] Message action fallback:", err);
-      }
-
-      if (action === "delete") {
-        setMessages((prev) => prev.filter((m) => m._id !== message._id));
-      } else {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === message._id ? { ...m, read: !m.read } : m,
-          ),
-        );
-      }
-    },
-    [authHeaders],
-  );
-
-  const saveJournal = useCallback(
-    async (newJournal) => {
-      try {
-        await fetch(`${API_URL}/admin/content/journal`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders(),
-          },
-          body: JSON.stringify({ entries: newJournal }),
-        });
-      } catch (err) {
-        console.warn("[Admin] Save journal fallback:", err);
-      }
-      setJournal(newJournal);
-    },
-    [authHeaders],
-  );
-
-  const value = useMemo(
-    () => ({
-      products,
-      cart,
-      wishlist,
-      user,
-      users,
-      orders,
-      reviews,
-      messages,
-      journal,
-      contact,
-      loading,
-      apiError,
-      setApiError,
-      backendStatus,
-      darkMode,
-      setDarkMode,
-      addToCart,
-      updateQuantity,
-      removeFromCart,
-      clearCart,
-      toggleWishlist,
-      login,
-      register,
-      quickLogin,
-      completeGoogleLogin,
-      logout,
-      placeOrder,
-      addReview,
-      deleteReview,
-      updateStock,
-      createProduct,
-      deleteProduct,
-      updateOrderStatus,
-      updateMessage,
-      addMessage,
-      saveJournal,
-      loadAdminData,
-      authHeaders,
-    }),
-    [
-      products,
-      cart,
-      wishlist,
-      user,
-      users,
-      orders,
-      reviews,
-      messages,
-      journal,
-      contact,
-      loading,
-      apiError,
-      backendStatus,
-      darkMode,
-      addToCart,
-      updateQuantity,
-      removeFromCart,
-      clearCart,
-      toggleWishlist,
-      login,
-      register,
-      quickLogin,
-      completeGoogleLogin,
-      logout,
-      placeOrder,
-      addReview,
-      deleteReview,
-      updateStock,
-      createProduct,
-      deleteProduct,
-      updateOrderStatus,
-      updateMessage,
-      addMessage,
-      saveJournal,
-      loadAdminData,
-      authHeaders,
-    ],
-  );
-
-  return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
-}
-
-function useShop() {
-  const context = useContext(ShopContext);
-  if (!context) {
-    throw new Error("useShop must be used within a ShopProvider");
+  if (inCodeBlock && codeBlockContent.length > 0) {
+    elements.push(
+      <pre key="code-end" className="code-pre">
+        <code>{codeBlockContent.join("\n")}</code>
+      </pre>,
+    );
   }
-  return context;
+
+  return <div className="markdown-body">{elements}</div>;
 }
 
-function Header() {
-  const { cart, wishlist, darkMode, setDarkMode, user, logout, backendStatus } =
-    useShop();
-  const [menuOpen, setMenuOpen] = useState(false);
+function formatInline(str) {
+  // Bold **text**
+  const parts = str.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={i}>{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+// Top Navbar
+function Navbar({ darkMode, setDarkMode, backendStatus }) {
+  const { user, logout, quickLogin } = useAuth();
+  const navigate = useNavigate();
 
   return (
-    <header className="site-header">
-      <Link to="/" className="brand" onClick={() => setMenuOpen(false)}>
-        <span className="brand-mark">L</span>
-        <span>
-          luma<span className="brand-dot">.</span>
-        </span>
-      </Link>
-      <nav className={menuOpen ? "nav-links open" : "nav-links"}>
-        <Link to="/" onClick={() => setMenuOpen(false)}>
-          Home
-        </Link>
-        <Link to="/shop" onClick={() => setMenuOpen(false)}>
-          Shop
-        </Link>
-        <Link to="/about" onClick={() => setMenuOpen(false)}>
-          About
-        </Link>
-        <Link to="/journal" onClick={() => setMenuOpen(false)}>
-          Journal
-        </Link>
-        <Link to="/contact" onClick={() => setMenuOpen(false)}>
-          Contact
-        </Link>
-        {user?.role === "admin" && (
-          <Link to="/admin" onClick={() => setMenuOpen(false)}>
-            Admin
+    <header className="collab-header">
+      <div className="header-container">
+        <div className="brand-section">
+          <Link to="/" className="brand-link">
+            <div className="brand-icon">
+              <BrainCircuit size={20} />
+            </div>
+            <span>CollabSphere</span>
+            <span className="brand-badge">Platform</span>
           </Link>
-        )}
-      </nav>
-      <div className="header-actions">
-        {/* Full Stack API Status Badge */}
-        <div
-          className="backend-pill"
-          title={
-            backendStatus === "connected"
-              ? "Backend API Connected (port 3001)"
-              : "Connecting to API backend..."
-          }
-        >
-          <span
-            className={`status-dot ${
-              backendStatus === "connected" ? "online" : "checking"
-            }`}
-          />
-          <small>
-            {backendStatus === "connected" ? "API Online" : "Connecting"}
-          </small>
         </div>
 
-        <button
-          className="icon-button"
-          aria-label="Toggle theme"
-          onClick={() => setDarkMode(!darkMode)}
-          title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-        <Link
-          className="icon-button with-count"
-          to="/wishlist"
-          aria-label="Wishlist"
-          title="View saved wishlist"
-        >
-          <Heart size={19} fill={wishlist.length ? "currentColor" : "none"} />
-          <span>{wishlist.length}</span>
-        </Link>
-        <Link className="bag-button" to="/cart" title="View bag">
-          <ShoppingBag size={17} />
-          <span>Bag</span>
-          <b>{cart.reduce((sum, item) => sum + item.quantity, 0)}</b>
-        </Link>
-        {user ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <div className="header-controls">
+          <div className="status-pill" title={`Backend status: ${backendStatus}`}>
             <span
-              style={{
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                opacity: 0.85,
-                maxWidth: "80px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={`Logged in as ${user.name || user.email} (${user.role})`}
-            >
-              {(user.name || user.email).split(" ")[0]}
-            </span>
-            <button
-              className="icon-button"
-              onClick={logout}
-              aria-label="Log out"
-              title="Log out"
-            >
-              ↪
-            </button>
+              className={`status-dot ${
+                backendStatus === "online" ? "online" : "fallback"
+              }`}
+            />
+            <span>{backendStatus === "online" ? "API Online" : "Connecting..."}</span>
           </div>
-        ) : (
-          <Link
-            className="icon-button"
-            to="/login"
-            aria-label="Log in"
-            title="Log in"
+
+          <button
+            className="icon-btn"
+            onClick={() => setDarkMode((prev) => !prev)}
+            title="Toggle theme"
           >
-            ↗
-          </Link>
-        )}
-        <button
-          className="menu-button"
-          aria-label="Open menu"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          <Menu size={20} />
-        </button>
+            {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+
+          {user ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div
+                className="user-profile-badge"
+                onClick={() => navigate("/dashboard")}
+                title={`Signed in as ${user.name} (${user.email})`}
+              >
+                <img
+                  src={
+                    user.avatar ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${user.name}`
+                  }
+                  alt={user.name}
+                  className="user-avatar"
+                />
+                <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                  {user.name}
+                </span>
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={logout}
+                title="Sign out"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => quickLogin("alex")}
+              >
+                Demo: Alex
+              </button>
+              <Link to="/login" className="btn btn-primary btn-sm">
+                Sign In
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
 }
 
-function ApiNotice() {
-  const { apiError, setApiError } = useShop();
-  if (!apiError) return null;
+// Auth Page (Login & Registration with 1-Click Demo Accounts)
+function AuthPage() {
+  const { login, register, quickLogin, user } = useAuth();
+  const navigate = useNavigate();
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [bio, setBio] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      if (isRegister) {
+        await register(name, email, password, bio);
+      } else {
+        await login(email, password);
+      }
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message || "Authentication failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="api-notice" role="alert">
-      <span>{apiError}</span>
-      <button onClick={() => setApiError("")} aria-label="Dismiss notification">
-        ×
-      </button>
+    <div
+      style={{
+        maxWidth: "460px",
+        margin: "60px auto",
+        padding: "32px",
+        background: "var(--bg-surface)",
+        borderRadius: "16px",
+        border: "1px solid var(--border)",
+        boxShadow: "var(--modal-shadow)",
+      }}
+    >
+      <div style={{ textAlign: "center", marginBottom: "24px" }}>
+        <div
+          style={{
+            width: "48px",
+            height: "48px",
+            borderRadius: "12px",
+            background: "var(--ai-gradient)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+            marginBottom: "12px",
+          }}
+        >
+          <BrainCircuit size={26} />
+        </div>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
+          {isRegister ? "Join CollabSphere" : "Welcome Back"}
+        </h2>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+          {isRegister
+            ? "Create an account to collaborate on projects & AI notes"
+            : "Sign in to access your projects, notes, and Gemini AI tools"}
+        </p>
+      </div>
+
+      {/* 1-Click Quick Demo Accounts */}
+      <div style={{ marginBottom: "20px" }}>
+        <div
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--text-secondary)",
+            fontWeight: 600,
+            marginBottom: "8px",
+            textTransform: "uppercase",
+          }}
+        >
+          Instant 1-Click Demo Accounts:
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+          <button
+            type="button"
+            className="demo-pill active"
+            onClick={() => quickLogin("alex").then(() => navigate("/dashboard"))}
+          >
+            👤 Alex (Lead Dev)
+          </button>
+          <button
+            type="button"
+            className="demo-pill"
+            onClick={() => quickLogin("sarah").then(() => navigate("/dashboard"))}
+          >
+            🔬 Sarah (Data Scientist)
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          margin: "18px 0",
+        }}
+      >
+        <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+          OR USE EMAIL
+        </span>
+        <div style={{ flex: 1, height: "1px", background: "var(--border)" }} />
+      </div>
+
+      {error && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: "rgba(239, 68, 68, 0.1)",
+            border: "1px solid var(--danger)",
+            borderRadius: "8px",
+            color: "var(--danger)",
+            fontSize: "0.85rem",
+            marginBottom: "16px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        {isRegister && (
+          <>
+            <div>
+              <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                Full Name
+              </label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Jordan Lee"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-app)",
+                  color: "var(--text-primary)",
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                Headline / Role (Optional)
+              </label>
+              <input
+                type="text"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="e.g. Full Stack Developer"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-app)",
+                  color: "var(--text-primary)",
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        <div>
+          <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+            Email Address
+          </label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="alex@collabsphere.dev"
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--bg-app)",
+              color: "var(--text-primary)",
+            }}
+          />
+        </div>
+
+        <div>
+          <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+            Password
+          </label>
+          <input
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--bg-app)",
+              color: "var(--text-primary)",
+            }}
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn btn-primary"
+          style={{ width: "100%", justifyContent: "center", marginTop: "6px" }}
+        >
+          {loading ? "Processing..." : isRegister ? "Create Account" : "Sign In"}
+        </button>
+
+        <div style={{ textAlign: "center", marginTop: "12px", fontSize: "0.85rem" }}>
+          <span style={{ color: "var(--text-secondary)" }}>
+            {isRegister ? "Already have an account? " : "Don't have an account? "}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setIsRegister(!isRegister);
+              setError("");
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--primary)",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {isRegister ? "Sign In" : "Sign Up"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
 
-function ProductImage({ src, alt, className }) {
-  const [error, setError] = useState(false);
-  const fallback =
-    "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85";
-
-  return (
-    <img
-      className={className}
-      src={error || !src ? fallback : src}
-      alt={alt || "Luma skincare product"}
-      loading="lazy"
-      onError={() => setError(true)}
-    />
-  );
-}
-
-function AuthPage({ mode = "login" }) {
+// Dashboard View
+function DashboardPage() {
+  const { user, token } = useAuth();
   const navigate = useNavigate();
-  const { login, register, quickLogin, completeGoogleLogin, user } = useShop();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [authError, setAuthError] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectDesc, setNewProjectDesc] = useState("");
+  const [newProjectTags, setNewProjectTags] = useState("");
+  const [newProjectPublic, setNewProjectPublic] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (user) navigate(user.role === "admin" ? "/admin" : "/shop");
-  }, [user, navigate]);
-
-  const submit = async (event) => {
-    event.preventDefault();
-    setLoading(true);
-    setAuthError("");
-    try {
-      if (mode === "login") {
-        await login({ email, password });
-      } else {
-        await register({ email, password, name });
+    let ignore = false;
+    async function load() {
+      if (!token) {
+        setLoading(false);
+        return;
       }
-      navigate("/shop");
-    } catch (error) {
-      setAuthError(error.message);
+      try {
+        const res = await fetch(`${API_URL}/projects`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!ignore && data.ok && Array.isArray(data.projects)) {
+          setProjects(data.projects);
+        }
+      } catch (err) {
+        console.warn("Failed fetching projects:", err);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [token]);
+
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    if (!newProjectName.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newProjectName.trim(),
+          description: newProjectDesc.trim(),
+          tags: newProjectTags,
+          isPublic: newProjectPublic,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.data) {
+        setProjects((prev) => [data.data, ...prev]);
+        setShowNewModal(false);
+        setNewProjectName("");
+        setNewProjectDesc("");
+        setNewProjectTags("");
+        navigate(`/project/${data.data._id || data.data.id}`);
+      }
+    } catch (err) {
+      alert(`Failed to create project: ${err.message}`);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const handleDemoLogin = async (role) => {
-    await quickLogin(role);
-    navigate(role === "admin" ? "/admin" : "/shop");
-  };
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery.trim()) return projects;
+    const q = searchQuery.toLowerCase();
+    return projects.filter(
+      (p) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.tags?.some((t) => t.toLowerCase().includes(q)),
+    );
+  }, [projects, searchQuery]);
+
+  const totalNotes = projects.reduce((acc, p) => acc + (p.notesCount || 0), 0);
+  const totalFiles = projects.reduce((acc, p) => acc + (p.filesCount || 0), 0);
 
   return (
-    <main className="auth-page">
-      <form className="auth-form" onSubmit={submit}>
-        <p className="eyebrow">Luma account</p>
-        <h1>{mode === "login" ? "Welcome back." : "Create your account."}</h1>
-
-        {/* 1-Click Instant Demo Login Buttons */}
-        <div
-          style={{
-            display: "flex",
-            gap: "0.5rem",
-            marginBottom: "1rem",
-            width: "100%",
-          }}
-        >
-          <button
-            type="button"
-            className="outline-button"
-            style={{ flex: 1, fontSize: "0.85rem", padding: "0.6rem 0.5rem" }}
-            onClick={() => handleDemoLogin("customer")}
-          >
-            Demo Customer
-          </button>
-          <button
-            type="button"
-            className="outline-button"
-            style={{ flex: 1, fontSize: "0.85rem", padding: "0.6rem 0.5rem" }}
-            onClick={() => handleDemoLogin("admin")}
-          >
-            Demo Admin
-          </button>
+    <div className="dashboard-container">
+      {/* Hero Section */}
+      <div className="dashboard-hero">
+        <div>
+          <h1 className="hero-title">Welcome back, {user?.name || "Developer"} 👋</h1>
+          <p className="hero-subtitle">
+            Manage projects, write AI-augmented Markdown notes, and share code assets with your team.
+          </p>
         </div>
 
-        {mode === "register" && (
+        <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
+          <Plus size={18} /> New Project
+        </button>
+      </div>
+
+      {/* KPI Stats */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon">
+            <FolderGit2 size={24} />
+          </div>
+          <div>
+            <div className="stat-value">{projects.length}</div>
+            <div className="stat-label">Collaborative Projects</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: "rgba(168, 85, 247, 0.15)", color: "#a855f7" }}>
+            <FileText size={24} />
+          </div>
+          <div>
+            <div className="stat-value">{totalNotes}</div>
+            <div className="stat-label">Markdown Notes with AI</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981" }}>
+            <Code2 size={24} />
+          </div>
+          <div>
+            <div className="stat-value">{totalFiles}</div>
+            <div className="stat-label">Code & Design Assets</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Projects List Header */}
+      <div className="projects-header">
+        <h2 style={{ fontSize: "1.3rem", fontWeight: 700 }}>Your Active Workspaces</h2>
+        <div className="search-box">
+          <Search size={16} color="var(--text-muted)" />
           <input
             type="text"
-            placeholder="Full name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
+            placeholder="Search projects by name or tag..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
-        )}
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
-        <input
-          type="password"
-          minLength="6"
-          placeholder="Password (6+ characters)"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-        <button className="primary-button" disabled={loading}>
-          {loading
-            ? "Working..."
-            : mode === "login"
-              ? "Log in"
-              : "Create account"}
-        </button>
-
-        <div className="auth-divider">
-          <span>or</span>
         </div>
+      </div>
 
-        <button
-          type="button"
-          className="google-button"
-          onClick={async () => {
-            await completeGoogleLogin();
-            navigate("/shop");
-          }}
-        >
-          <span aria-hidden="true">G</span> Continue with Google
-        </button>
-
-        {authError && <p className="auth-error">{authError}</p>}
-
-        <Link
-          className="text-button"
-          to={mode === "login" ? "/register" : "/login"}
-        >
-          {mode === "login"
-            ? "Create an account"
-            : "Already have an account? Log in"}
-        </Link>
-      </form>
-    </main>
-  );
-}
-
-function GoogleAuthCallbackPage() {
-  const navigate = useNavigate();
-  const { completeGoogleLogin } = useShop();
-
-  useEffect(() => {
-    completeGoogleLogin().then(() => navigate("/shop", { replace: true }));
-  }, [completeGoogleLogin, navigate]);
-
-  return (
-    <main className="auth-page">
-      <p>Signing you in with Google…</p>
-    </main>
-  );
-}
-
-function AdminPage() {
-  const {
-    user,
-    quickLogin,
-    products,
-    updateStock,
-    createProduct,
-    deleteProduct,
-    orders,
-    updateOrderStatus,
-    reviews,
-    deleteReview,
-    messages,
-    updateMessage,
-    journal,
-    saveJournal,
-    loadAdminData,
-    loading,
-  } = useShop();
-
-  const [newProduct, setNewProduct] = useState({
-    name: "",
-    category: "Cleansers",
-    price: "",
-    inventory: "",
-    size: "50 ml",
-    description: "",
-  });
-
-  const [localJournal, setLocalJournal] = useState(journal);
-  const [journalSaved, setJournalSaved] = useState(false);
-
-  // Load live admin data from backend on entry
-  useEffect(() => {
-    if (user?.role === "admin") {
-      loadAdminData();
-    }
-  }, [user, loadAdminData]);
-
-  if (!user || user.role !== "admin") {
-    return (
-      <main className="empty-state page-empty">
-        <h2>Admins only.</h2>
-        <p>The control room is reserved for store managers.</p>
+      {/* Projects Grid */}
+      {loading ? (
+        <div style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
+          Loading your projects...
+        </div>
+      ) : filteredProjects.length === 0 ? (
         <div
           style={{
-            display: "flex",
-            gap: "1rem",
-            justifyContent: "center",
-            marginTop: "1.5rem",
+            padding: "48px 24px",
+            textAlign: "center",
+            background: "var(--bg-surface)",
+            borderRadius: "12px",
+            border: "1px solid var(--border)",
           }}
         >
-          <button
-            className="primary-button"
-            onClick={() => quickLogin("admin")}
-          >
-            Sign in as Demo Admin
-          </button>
-          <Link to="/shop" className="outline-button">
-            Back to shop
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  // Calculate dynamic dashboard stats
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
-  const lowStockCount = products.filter(
-    (p) => (p.inventory ?? 25) <= 5,
-  ).length;
-  const unreadMessagesCount = messages.filter((m) => !m.read).length;
-
-  const handleUpdateStock = (product) => {
-    const current = product.inventory ?? 25;
-    const input = window.prompt(
-      `Update stock quantity for ${product.name}:`,
-      current,
-    );
-    if (input === null) return;
-    const num = Number(input);
-    if (!Number.isInteger(num) || num < 0) {
-      alert("Please enter a valid non-negative integer.");
-      return;
-    }
-    updateStock(product, num);
-  };
-
-  const handleCreateProduct = (e) => {
-    e.preventDefault();
-    createProduct(newProduct);
-    setNewProduct({
-      name: "",
-      category: "Cleansers",
-      price: "",
-      inventory: "",
-      size: "50 ml",
-      description: "",
-    });
-  };
-
-  const handleDeleteProduct = (product) => {
-    if (window.confirm(`Are you sure you want to delete ${product.name}?`)) {
-      deleteProduct(product);
-    }
-  };
-
-  const handleDeleteReview = (review) => {
-    if (window.confirm("Are you sure you want to delete this customer review?")) {
-      deleteReview(review.productId, review._id);
-    }
-  };
-
-  const handleSaveJournal = () => {
-    saveJournal(localJournal);
-    setJournalSaved(true);
-    setTimeout(() => setJournalSaved(false), 2500);
-  };
-
-  return (
-    <main className="admin-page">
-      <div className="admin-heading">
-        <div>
-          <p className="eyebrow">Control room</p>
-          <h1>
-            Admin <i>dashboard.</i>
-          </h1>
-        </div>
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-          <button
-            className="text-button"
-            onClick={loadAdminData}
-            disabled={loading}
-          >
-            {loading ? "Refreshing..." : "Refresh live data"}
-          </button>
-          <span style={{ fontSize: "0.9rem", opacity: 0.8 }}>
-            Logged in as <b>{user.name || user.email}</b> (Admin)
-          </span>
-        </div>
-      </div>
-
-      <div className="admin-stats">
-        <div>
-          <strong>${totalRevenue.toFixed(2)}</strong>
-          <span>Total revenue</span>
-        </div>
-        <div>
-          <strong>{orders.length}</strong>
-          <span>Total orders</span>
-        </div>
-        <div>
-          <strong>{products.length}</strong>
-          <span>Total products</span>
-        </div>
-        <div>
-          <strong style={{ color: lowStockCount > 0 ? "#e57373" : "inherit" }}>
-            {lowStockCount}
-          </strong>
-          <span>Low stock alerts</span>
-        </div>
-        <div>
-          <strong>{reviews.length}</strong>
-          <span>Total reviews</span>
-        </div>
-        <div>
-          <strong>{unreadMessagesCount}</strong>
-          <span>Unread inquiries</span>
-        </div>
-      </div>
-
-      {/* Inventory Section */}
-      <section className="admin-section">
-        <div className="section-intro">
-          <h2>Inventory Management</h2>
-          <span>{products.length} products</span>
-        </div>
-        <form className="admin-product-form" onSubmit={handleCreateProduct}>
-          <input
-            placeholder="Product name"
-            value={newProduct.name}
-            onChange={(event) =>
-              setNewProduct({ ...newProduct, name: event.target.value })
-            }
-            required
-          />
-          <select
-            value={newProduct.category}
-            onChange={(event) =>
-              setNewProduct({ ...newProduct, category: event.target.value })
-            }
-          >
-            {categories
-              .filter((cat) => cat !== "All products")
-              .map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-          </select>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="Price ($)"
-            value={newProduct.price}
-            onChange={(event) =>
-              setNewProduct({ ...newProduct, price: event.target.value })
-            }
-            required
-          />
-          <input
-            type="number"
-            min="0"
-            step="1"
-            placeholder="Initial stock"
-            value={newProduct.inventory}
-            onChange={(event) =>
-              setNewProduct({
-                ...newProduct,
-                inventory: event.target.value,
-              })
-            }
-            required
-          />
-          <button className="primary-button">Add product</button>
-        </form>
-
-        <div className="admin-table">
-          {products.map((product) => (
-            <div className="admin-row" key={product.id}>
-              <span>
-                <strong>{product.name}</strong>
-                <small>
-                  {product.category} · ${product.price} · {product.size}
-                </small>
-              </span>
-              <b
-                className={(product.inventory ?? 25) <= 5 ? "low-stock" : ""}
-              >
-                {product.inventory ?? 25} in stock
-              </b>
-              <button
-                className="outline-button"
-                onClick={() => handleUpdateStock(product)}
-              >
-                Update stock
-              </button>
-              <button
-                className="review-delete"
-                onClick={() => handleDeleteProduct(product)}
-              >
-                Delete
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Orders Section */}
-      <section className="admin-section">
-        <div className="section-intro">
-          <h2>Customer Orders</h2>
-          <span>{orders.length} placed orders</span>
-        </div>
-        <div className="admin-table">
-          {orders.length ? (
-            orders.map((order) => (
-              <div className="admin-row" key={order.id}>
-                <span>
-                  <strong>{order.id}</strong>
-                  <small>
-                    {order.customer?.name} ({order.customer?.email}) · $
-                    {order.total?.toFixed?.(2) || order.total} ·{" "}
-                    {order.items?.length} items · {order.date || order.createdAt}
-                  </small>
-                </span>
-                <select
-                  value={order.status}
-                  onChange={(event) =>
-                    updateOrderStatus(order, event.target.value)
-                  }
-                >
-                  <option value="awaiting_payment">awaiting_payment</option>
-                  <option value="processing">processing</option>
-                  <option value="shipped">shipped</option>
-                  <option value="completed">completed</option>
-                  <option value="cancelled">cancelled</option>
-                </select>
-              </div>
-            ))
-          ) : (
-            <p className="muted-copy" style={{ padding: "1rem" }}>
-              No orders placed yet.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Reviews Moderation */}
-      <section className="admin-section">
-        <div className="section-intro">
-          <h2>Community Reviews</h2>
-          <span>{reviews.length} reviews</span>
-        </div>
-        <div className="admin-table">
-          {reviews.length ? (
-            reviews.map((review) => {
-              const prod = products.find((p) => p.id === review.productId);
-              return (
-                <div className="admin-row" key={review._id}>
-                  <span>
-                    <strong>
-                      {review.name} ({review.rating}★)
-                    </strong>
-                    <small>
-                      Product: {prod ? prod.name : `#${review.productId}`} · "
-                      {review.text}"
-                    </small>
-                  </span>
-                  <button
-                    className="review-delete"
-                    onClick={() => handleDeleteReview(review)}
-                  >
-                    Delete review
-                  </button>
-                </div>
-              );
-            })
-          ) : (
-            <p className="muted-copy" style={{ padding: "1rem" }}>
-              No reviews to moderate.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Contact Messages */}
-      <section className="admin-section">
-        <div className="section-intro">
-          <h2>Contact Inquiries</h2>
-          <span>{messages.length} messages</span>
-        </div>
-        <div className="admin-table">
-          {messages.length ? (
-            messages.map((message) => (
-              <div className="admin-row" key={message._id}>
-                <span>
-                  <strong>
-                    {message.name} · {message.email}
-                  </strong>
-                  <small>{message.message}</small>
-                </span>
-                <span
-                  style={{
-                    display: "flex",
-                    gap: "0.5rem",
-                    alignItems: "center",
-                  }}
-                >
-                  <b style={{ color: message.read ? "inherit" : "#809c73" }}>
-                    {message.read ? "Read" : "New"}
-                  </b>
-                  <button
-                    className="outline-button"
-                    onClick={() => updateMessage(message, "toggle")}
-                  >
-                    {message.read ? "Mark unread" : "Mark read"}
-                  </button>
-                  <button
-                    className="review-delete"
-                    onClick={() => updateMessage(message, "delete")}
-                  >
-                    Delete
-                  </button>
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="muted-copy" style={{ padding: "1rem" }}>
-              No inquiries received yet.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Journal Editor */}
-      <section className="admin-section">
-        <div className="section-intro">
-          <h2>Journal Content</h2>
-          <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-            {journalSaved && (
-              <span style={{ color: "#809c73", fontSize: "0.9rem" }}>
-                Saved successfully!
-              </span>
-            )}
-            <button className="text-button" onClick={handleSaveJournal}>
-              Save journal
-            </button>
-          </div>
-        </div>
-        <div className="admin-journal-editor">
-          {localJournal.map((entry, index) => (
-            <div key={`${entry.title}-${index}`}>
-              <input
-                value={entry.title}
-                onChange={(event) =>
-                  setLocalJournal((items) =>
-                    items.map((item, itemIndex) =>
-                      itemIndex === index
-                        ? { ...item, title: event.target.value }
-                        : item,
-                    ),
-                  )
-                }
-                placeholder="Article title"
-              />
-              <input
-                value={entry.type}
-                onChange={(event) =>
-                  setLocalJournal((items) =>
-                    items.map((item, itemIndex) =>
-                      itemIndex === index
-                        ? { ...item, type: event.target.value }
-                        : item,
-                    ),
-                  )
-                }
-                placeholder="Category (e.g. Rituals, Ingredients)"
-              />
-              <textarea
-                value={entry.text}
-                onChange={(event) =>
-                  setLocalJournal((items) =>
-                    items.map((item, itemIndex) =>
-                      itemIndex === index
-                        ? { ...item, text: event.target.value }
-                        : item,
-                    ),
-                  )
-                }
-                placeholder="Article summary text"
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function ProductCard({ product }) {
-  const { wishlist, toggleWishlist, addToCart } = useShop();
-  const wished = wishlist.includes(product.id);
-  const [added, setAdded] = useState(false);
-
-  const handleAdd = () => {
-    addToCart(product);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 1500);
-  };
-
-  return (
-    <article className="product-card">
-      <div className="product-image-wrap">
-        <Link to={`/product/${product.id}`}>
-          <ProductImage src={product.image} alt={product.name} />
-        </Link>
-        <button
-          className={wished ? "wishlist active" : "wishlist"}
-          onClick={() => toggleWishlist(product.id)}
-          aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
-          title={wished ? "Saved in wishlist" : "Save to wishlist"}
-        >
-          <Heart size={18} fill={wished ? "currentColor" : "none"} />
-        </button>
-        <span className="product-tag">{product.category}</span>
-      </div>
-      <div className="product-info">
-        <div>
-          <Link to={`/product/${product.id}`} className="product-name">
-            {product.name}
-          </Link>
-          <p className="product-size">{product.size}</p>
-        </div>
-        <button
-          className="add-mini"
-          onClick={handleAdd}
-          aria-label={`Add ${product.name} to bag`}
-          title={added ? "Added!" : "Add to bag"}
-        >
-          <Plus size={18} />
-        </button>
-      </div>
-      <div className="product-meta">
-        <span>${product.price}</span>
-        <span className="rating">
-          ★ {product.rating} <em>({product.reviews})</em>
-        </span>
-      </div>
-    </article>
-  );
-}
-
-function ShopPage() {
-  const { products, loading } = useShop();
-  const [params, setParams] = useSearchParams();
-  const [query, setQuery] = useState(params.get("q") || "");
-  const [sort, setSort] = useState("featured");
-  const category = params.get("category") || "All products";
-  const maxPrice = Number(params.get("max") || 60);
-
-  const filtered = useMemo(() => {
-    return products
-      .filter((product) => {
-        const matchesCategory =
-          category === "All products" || product.category === category;
-        const matchesPrice = product.price <= maxPrice;
-        const matchesQuery =
-          product.name.toLowerCase().includes(query.toLowerCase()) ||
-          product.description?.toLowerCase().includes(query.toLowerCase());
-        return matchesCategory && matchesPrice && matchesQuery;
-      })
-      .sort((first, second) => {
-        if (sort === "price-low") return first.price - second.price;
-        if (sort === "price-high") return second.price - first.price;
-        if (sort === "rating") return second.rating - first.rating;
-        if (sort === "name") return first.name.localeCompare(second.name);
-        return first.id - second.id;
-      });
-  }, [products, category, maxPrice, query, sort]);
-
-  const updateFilter = (key, value) => {
-    const next = new URLSearchParams(params);
-    if (value) next.set(key, value);
-    else next.delete(key);
-    setParams(next);
-  };
-
-  return (
-    <main>
-      <section className="shop-heading">
-        <div>
-          <p className="eyebrow">The collection</p>
-          <h1>
-            Good skin, <i>gently.</i>
-          </h1>
-          <p className="heading-copy">
-            Thoughtful essentials for your everyday ritual. Made with less,
-            chosen with care.
+          <FolderGit2 size={40} color="var(--text-muted)" style={{ marginBottom: "12px" }} />
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "6px" }}>
+            No projects found
+          </h3>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginBottom: "16px" }}>
+            Get started by creating your first collaborative project.
           </p>
-        </div>
-        <div className="search-box">
-          <Search size={18} />
-          <input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              updateFilter("q", event.target.value);
-            }}
-            placeholder="Search the collection"
-          />
-        </div>
-      </section>
-
-      {loading ? (
-        <div className="empty-state">
-          <Sparkles size={28} />
-          <h2>Loading the collection.</h2>
+          <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
+            <Plus size={16} /> Create Project
+          </button>
         </div>
       ) : (
-        <section className="shop-layout">
-          <aside className="filters">
-            <p className="filter-label">Browse by</p>
-            {categories.map((item) => (
-              <button
-                key={item}
-                className={
-                  category === item ? "filter-option active" : "filter-option"
-                }
-                onClick={() =>
-                  updateFilter("category", item === "All products" ? "" : item)
-                }
-              >
-                {item}
-                <span>
-                  {item === "All products"
-                    ? products.length
-                    : products.filter((product) => product.category === item)
-                        .length}
-                </span>
-              </button>
-            ))}
-            <div className="price-filter">
-              <p className="filter-label">
-                Price up to <strong>${maxPrice}</strong>
-              </p>
-              <input
-                type="range"
-                min="18"
-                max="60"
-                value={maxPrice}
-                onChange={(event) => updateFilter("max", event.target.value)}
-              />
-            </div>
-          </aside>
-          <div className="catalog">
-            <div className="catalog-toolbar">
-              <span>{filtered.length} products</span>
-              <label>
-                Sort by{" "}
-                <select
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value)}
-                >
-                  <option value="featured">Featured</option>
-                  <option value="price-low">Price: low to high</option>
-                  <option value="price-high">Price: high to low</option>
-                  <option value="rating">Top rated</option>
-                  <option value="name">Name</option>
-                </select>
-                <ChevronDown size={15} />
-              </label>
-            </div>
-            {filtered.length ? (
-              <div className="product-grid">
-                {filtered.map((product) => (
-                  <ProductCard key={product.id} product={product} />
-                ))}
+        <div className="projects-grid">
+          {filteredProjects.map((project) => {
+            const isOwner = project.ownerId === user?.id;
+            return (
+              <div key={project._id || project.id} className="project-card">
+                <div>
+                  <div className="project-card-header">
+                    <Link
+                      to={`/project/${project._id || project.id}`}
+                      className="project-title"
+                    >
+                      {project.name}
+                    </Link>
+                    <span className={`badge-role ${isOwner ? "owner" : "collaborator"}`}>
+                      {isOwner ? "Owner" : "Member"}
+                    </span>
+                  </div>
+
+                  <p className="project-desc">{project.description || "No description provided."}</p>
+
+                  <div className="project-tags">
+                    {(project.tags || []).map((t, idx) => (
+                      <span key={idx} className="tag-pill">
+                        #{t}
+                      </span>
+                    ))}
+                    {project.isPublic && (
+                      <span className="tag-pill" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#10b981", borderColor: "rgba(16, 185, 129, 0.2)" }}>
+                        🌐 Public
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="project-card-footer">
+                  <div className="project-metrics">
+                    <span className="metric-item" title="Team members">
+                      <Users size={14} /> {project.membersCount || project.members?.length || 1}
+                    </span>
+                    <span className="metric-item" title="Notes">
+                      <FileText size={14} /> {project.notesCount || 0}
+                    </span>
+                    <span className="metric-item" title="Files">
+                      <Code2 size={14} /> {project.filesCount || 0}
+                    </span>
+                  </div>
+
+                  <Link
+                    to={`/project/${project._id || project.id}`}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Open <ArrowRight size={14} />
+                  </Link>
+                </div>
               </div>
-            ) : (
-              <div className="empty-state">
-                <Sparkles size={28} />
-                <h2>No matches just yet.</h2>
-                <p>Try a different search or reset your filters.</p>
+            );
+          })}
+        </div>
+      )}
+
+      {/* New Project Modal */}
+      {showNewModal && (
+        <div className="modal-backdrop" onClick={() => setShowNewModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ fontSize: "1.15rem", fontWeight: 700 }}>Create New Project</h3>
+              <button className="icon-btn" onClick={() => setShowNewModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateProject}>
+              <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                    Project Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. MyWebApp or DataAnalysisScript"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-app)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                    Description
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="What does this project do?"
+                    value={newProjectDesc}
+                    onChange={(e) => setNewProjectDesc(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-app)",
+                      color: "var(--text-primary)",
+                      resize: "none",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                    Tags (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="react, node, python, machine-learning"
+                    value={newProjectTags}
+                    onChange={(e) => setNewProjectTags(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-app)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    id="isPublic"
+                    checked={newProjectPublic}
+                    onChange={(e) => setNewProjectPublic(e.target.checked)}
+                  />
+                  <label htmlFor="isPublic" style={{ fontSize: "0.85rem", cursor: "pointer" }}>
+                    Make this project publicly viewable with a shareable link
+                  </label>
+                </div>
+              </div>
+              <div className="modal-footer">
                 <button
-                  className="text-button"
-                  onClick={() => {
-                    setQuery("");
-                    setParams({});
-                  }}
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowNewModal(false)}
                 >
-                  Clear filters <ArrowRight size={15} />
+                  Cancel
+                </button>
+                <button type="submit" disabled={submitting} className="btn btn-primary">
+                  {submitting ? "Creating..." : "Create Project"}
                 </button>
               </div>
-            )}
+            </form>
           </div>
-        </section>
+        </div>
       )}
-    </main>
+    </div>
   );
 }
 
-function HomePage() {
-  const { products, loading } = useShop();
+// Project Workspace View
+function ProjectWorkspacePage() {
+  const { id: projectId } = useParams();
+  const { user, token } = useAuth();
+  const navigate = useNavigate();
 
-  return (
-    <main>
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Skincare, simplified</p>
-          <h1>
-            Your skin's <i>quiet</i> luxury.
-          </h1>
-          <p>
-            Small rituals. Considered ingredients. A softer way to take care of
-            the skin you live in.
-          </p>
-          <Link to="/shop" className="primary-button">
-            Shop the collection <ArrowRight size={16} />
-          </Link>
-          <div className="hero-note">
-            <span>✦</span> Dermatologist tested
-            <br />
-            <span>✦</span> Kind to sensitive skin
-          </div>
-        </div>
-        <div className="hero-visual">
-          <img
-            src="https://images.unsplash.com/photo-1556229010-6c3f2c9ca5f8?auto=format&fit=crop&w=1200&q=90"
-            alt="Luma skincare bottles on a stone surface"
-          />
-          <div className="hero-stamp">
-            made for
-            <br />
-            <i>slow</i> mornings
-          </div>
-        </div>
-      </section>
-      <section className="ticker">
-        <span>Clean formulas</span>
-        <b>✦</b>
-        <span>Thoughtful rituals</span>
-        <b>✦</b>
-        <span>Visible calm</span>
-        <b>✦</b>
-        <span>Clean formulas</span>
-      </section>
-      <section className="featured" id="ritual">
-        <div className="section-intro">
-          <div>
-            <p className="eyebrow">Meet your essentials</p>
-            <h2>
-              A little <i>luma</i> goes a long way.
-            </h2>
-          </div>
-          <Link to="/shop" className="text-button">
-            View all products <ArrowRight size={15} />
-          </Link>
-        </div>
-        {loading ? (
-          <div className="empty-state">
-            <Sparkles size={28} />
-            <h2>Loading the collection.</h2>
-          </div>
-        ) : (
-          <div className="product-grid">
-            {products.slice(0, 4).map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
-        )}
-      </section>
-      <section className="ritual-band" id="journal">
-        <div>
-          <p className="eyebrow">The luma ritual</p>
-          <h2>
-            Less noise.
-            <br />
-            <i>More glow.</i>
-          </h2>
-        </div>
-        <p>
-          We believe skincare should feel like a breath, not a chore. Each
-          formula is made to be understood, enjoyed, and used right down to the
-          last drop.
-        </p>
-        <Link to="/shop" className="circle-arrow" aria-label="Shop now">
-          <ArrowRight size={20} />
-        </Link>
-      </section>
-    </main>
-  );
-}
+  const [project, setProject] = useState(null);
+  const [activeTab, setActiveTab] = useState("notes"); // 'overview', 'notes', 'files', 'ai', 'settings'
+  const [loading, setLoading] = useState(true);
+  const [copiedLink, setCopiedLink] = useState(false);
 
-function ProductPage() {
-  const { id } = useParams();
-  const {
-    products,
-    loading,
-    addToCart,
-    wishlist,
-    toggleWishlist,
-    reviews: allReviews,
-    addReview,
-    deleteReview,
-    user,
-  } = useShop();
+  // Notes state
+  const [notes, setNotes] = useState([]);
+  const [activeNote, setActiveNote] = useState(null);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [editorMode, setEditorMode] = useState("split"); // 'write', 'preview', 'split'
+  const [noteSaving, setNoteSaving] = useState(false);
 
-  const product = products.find((item) => item.id === Number(id));
-  const [added, setAdded] = useState(false);
-  const [productReviews, setProductReviews] = useState([]);
-  const [reviewForm, setReviewForm] = useState({
-    name: user?.name || "",
-    rating: 5,
-    text: "",
-  });
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  // Files state
+  const [files, setFiles] = useState([]);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [newCodeModal, setNewCodeModal] = useState(false);
+  const [newCodeName, setNewCodeName] = useState("");
+  const [newCodeContent, setNewCodeContent] = useState("");
 
-  // Fetch live reviews from backend API for this product
+  // Analytics state
+  const [analytics, setAnalytics] = useState(null);
+
+  // Team state
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState("collaborator");
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState("");
+
+  // Gemini AI Modal State
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiModalTitle, setAiModalTitle] = useState("");
+  const [aiModalContent, setAiModalContent] = useState("");
+  const [aiModalLoading, setAiModalLoading] = useState(false);
+  const [aiPromptInput, setAiPromptInput] = useState("");
+
   useEffect(() => {
-    if (!product) return;
-    fetch(`${API_URL}/products/${product.id}/reviews`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.reviews)) {
-          setProductReviews(data.reviews);
+    let ignore = false;
+    async function loadWorkspace() {
+      try {
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const [projRes, notesRes, filesRes, analyticsRes] = await Promise.all([
+          fetch(`${API_URL}/projects/${projectId}`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/projects/${projectId}/notes`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/projects/${projectId}/files`, { headers }).then((r) => r.json()),
+          fetch(`${API_URL}/projects/${projectId}/analytics`, { headers }).then((r) => r.json()),
+        ]);
+
+        if (ignore) return;
+        if (projRes.ok && projRes.project) {
+          setProject(projRes.project);
         }
-      })
-      .catch(() => {
-        // Fallback to local reviews state
-        setProductReviews(allReviews.filter((r) => r.productId === product.id));
+        if (notesRes.ok && Array.isArray(notesRes.notes)) {
+          setNotes(notesRes.notes);
+          if (notesRes.notes.length > 0) {
+            setActiveNote((prev) => prev || notesRes.notes[0]);
+            setNoteTitle((prev) => prev || notesRes.notes[0].title);
+            setNoteContent((prev) => prev || notesRes.notes[0].content);
+          }
+        }
+        if (filesRes.ok && Array.isArray(filesRes.files)) {
+          setFiles(filesRes.files);
+        }
+        if (analyticsRes.ok && analyticsRes.analytics) {
+          setAnalytics(analyticsRes.analytics);
+        }
+      } catch (err) {
+        console.warn("Failed loading workspace:", err);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    loadWorkspace();
+    return () => {
+      ignore = true;
+    };
+  }, [projectId, token]);
+
+  // Select note
+  const selectNote = (note) => {
+    setActiveNote(note);
+    setNoteTitle(note.title);
+    setNoteContent(note.content);
+  };
+
+  // Create new note
+  const handleCreateNote = async () => {
+    try {
+      const res = await fetch(`${API_URL}/projects/${projectId}/notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: "Untitled Note",
+          content: "# New Note\n\nWrite your thoughts or specifications here in Markdown...",
+        }),
       });
-  }, [product, allReviews]);
+      const data = await res.json();
+      if (data.ok && data.note) {
+        setNotes((prev) => [data.note, ...prev]);
+        selectNote(data.note);
+      }
+    } catch (err) {
+      alert(`Error creating note: ${err.message}`);
+    }
+  };
+
+  // Save active note
+  const handleSaveNote = async () => {
+    if (!activeNote) return;
+    setNoteSaving(true);
+    try {
+      const noteId = activeNote._id || activeNote.id;
+      const res = await fetch(`${API_URL}/projects/${projectId}/notes/${noteId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: noteTitle,
+          content: noteContent,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.note) {
+        setNotes((prev) =>
+          prev.map((n) => ((n._id || n.id) === noteId ? data.note : n)),
+        );
+        setActiveNote(data.note);
+      }
+    } catch (err) {
+      alert(`Failed to save note: ${err.message}`);
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  // Delete note
+  const handleDeleteNote = async (noteId) => {
+    if (!confirm("Are you sure you want to delete this note?")) return;
+    try {
+      await fetch(`${API_URL}/projects/${projectId}/notes/${noteId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const remaining = notes.filter((n) => (n._id || n.id) !== noteId);
+      setNotes(remaining);
+      if (remaining.length > 0) {
+        selectNote(remaining[0]);
+      } else {
+        setActiveNote(null);
+        setNoteTitle("");
+        setNoteContent("");
+      }
+    } catch (err) {
+      alert(`Failed to delete note: ${err.message}`);
+    }
+  };
+
+  // Explain note using Gemini AI
+  const handleExplainNote = async () => {
+    if (!noteContent) return;
+    setAiModalOpen(true);
+    setAiModalTitle("🤖 Gemini AI: Note Explanation");
+    setAiModalLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/gemini/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: `# ${noteTitle}\n\n${noteContent}`,
+          type: "note",
+          language: "markdown",
+        }),
+      });
+      const data = await res.json();
+      setAiModalContent(data.data?.explanation || "No explanation generated.");
+    } catch (err) {
+      setAiModalContent(`Error calling Gemini AI: ${err.message}`);
+    } finally {
+      setAiModalLoading(false);
+    }
+  };
+
+  // Suggest improvements for note using Gemini AI
+  const handleImproveNote = async () => {
+    if (!noteContent) return;
+    setAiModalOpen(true);
+    setAiModalTitle("💡 Gemini AI: Note Improvement Suggestions");
+    setAiModalLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/gemini/improve-note`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: noteTitle,
+          content: noteContent,
+        }),
+      });
+      const data = await res.json();
+      setAiModalContent(data.data?.suggestions || "No suggestions generated.");
+    } catch (err) {
+      setAiModalContent(`Error calling Gemini AI: ${err.message}`);
+    } finally {
+      setAiModalLoading(false);
+    }
+  };
+
+  // File Upload
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${API_URL}/projects/${projectId}/files`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.ok && data.file) {
+        setFiles((prev) => [data.file, ...prev]);
+        setPreviewFile(data.file);
+      }
+    } catch (err) {
+      alert(`Upload failed: ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Direct Code Creation
+  const handleCreateCodeFile = async (e) => {
+    e.preventDefault();
+    if (!newCodeName.trim() || !newCodeContent.trim()) return;
+    try {
+      const res = await fetch(`${API_URL}/projects/${projectId}/files`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          filename: newCodeName.trim(),
+          content: newCodeContent,
+          mimeType: "text/plain",
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.file) {
+        setFiles((prev) => [data.file, ...prev]);
+        setPreviewFile(data.file);
+        setNewCodeModal(false);
+        setNewCodeName("");
+        setNewCodeContent("");
+      }
+    } catch (err) {
+      alert(`Failed creating code file: ${err.message}`);
+    }
+  };
+
+  // Explain Code using Gemini AI
+  const handleExplainCode = async (file) => {
+    setAiModalOpen(true);
+    setAiModalTitle(`⚡ Gemini AI: Code Breakdown for ${file.originalName}`);
+    setAiModalLoading(true);
+    try {
+      const codeText = file.content || `// Code file: ${file.originalName}`;
+      const res = await fetch(`${API_URL}/gemini/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: codeText,
+          type: "code",
+          language: file.extension || "javascript",
+        }),
+      });
+      const data = await res.json();
+      setAiModalContent(data.data?.explanation || "No explanation generated.");
+    } catch (err) {
+      setAiModalContent(`Error calling Gemini AI: ${err.message}`);
+    } finally {
+      setAiModalLoading(false);
+    }
+  };
+
+  // Generate Docs using Gemini AI
+  const handleGenerateDocs = async (file) => {
+    setAiModalOpen(true);
+    setAiModalTitle(`📚 Gemini AI: Auto-Generated Docs for ${file.originalName}`);
+    setAiModalLoading(true);
+    try {
+      const codeText = file.content || `// Code file: ${file.originalName}`;
+      const res = await fetch(`${API_URL}/gemini/docs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: codeText,
+          language: file.extension || "javascript",
+        }),
+      });
+      const data = await res.json();
+      setAiModalContent(data.data?.docs || "No documentation generated.");
+    } catch (err) {
+      setAiModalContent(`Error: ${err.message}`);
+    } finally {
+      setAiModalLoading(false);
+    }
+  };
+
+  // Generate Project README using Gemini AI
+  const handleGenerateReadme = async () => {
+    setAiModalOpen(true);
+    setAiModalTitle(`📄 Gemini AI: Project README.md for ${project?.name}`);
+    setAiModalLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/gemini/readme`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectName: project?.name,
+          description: project?.description,
+          codeOverview: notes.map((n) => n.title).join(", "),
+          files: files,
+        }),
+      });
+      const data = await res.json();
+      setAiModalContent(data.data?.readme || "No README generated.");
+    } catch (err) {
+      setAiModalContent(`Error: ${err.message}`);
+    } finally {
+      setAiModalLoading(false);
+    }
+  };
+
+  // Invite member
+  const handleInviteMember = async (e) => {
+    e.preventDefault();
+    if (!memberEmail.trim()) return;
+    setInviteError("");
+    setInviting(true);
+    try {
+      const res = await fetch(`${API_URL}/projects/${projectId}/members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          email: memberEmail.trim(),
+          role: memberRole,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Failed to invite member");
+      }
+      setProject((prev) => ({ ...prev, members: data.members }));
+      setMemberEmail("");
+      alert("Member added successfully!");
+    } catch (err) {
+      setInviteError(err.message);
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  // Copy shareable public link
+  const copyShareLink = () => {
+    const link = `${window.location.origin}/shared/${project?.shareToken}`;
+    navigator.clipboard.writeText(link);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
 
   if (loading) {
     return (
-      <div className="empty-state page-empty">
-        <h2>Loading product.</h2>
+      <div style={{ padding: "60px", textAlign: "center", color: "var(--text-secondary)" }}>
+        Loading project workspace...
       </div>
     );
   }
 
-  if (!product) {
+  if (!project) {
     return (
-      <div className="empty-state page-empty">
-        <h2>Product not found</h2>
-        <Link to="/shop" className="text-button">
-          Back to shop <ArrowRight size={15} />
+      <div style={{ padding: "60px", textAlign: "center" }}>
+        <h2>Project not found</h2>
+        <Link to="/dashboard" className="btn btn-primary" style={{ marginTop: "16px" }}>
+          Back to Dashboard
         </Link>
       </div>
     );
   }
 
-  const wished = wishlist.includes(product.id);
-  const stock = product.inventory ?? 25;
-
-  const handleAddToCart = () => {
-    if (stock <= 0) return;
-    addToCart(product);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 2000);
-  };
-
-  const handleSubmitReview = async (e) => {
-    e.preventDefault();
-    if (!reviewForm.name || !reviewForm.text) return;
-
-    setReviewSubmitting(true);
-    const created = await addReview(product.id, reviewForm);
-    if (created) {
-      setProductReviews((prev) => [created, ...prev]);
-    }
-    setReviewForm({
-      name: user?.name || "",
-      rating: 5,
-      text: "",
-    });
-    setReviewSubmitting(false);
-  };
-
-  const handleDeleteReview = async (reviewId) => {
-    await deleteReview(product.id, reviewId);
-    setProductReviews((prev) => prev.filter((r) => r._id !== reviewId));
-  };
+  const isOwner = project.ownerId === user?.id;
 
   return (
-    <main className="detail-page">
-      <Link to="/shop" className="back-link">
-        ← Back to collection
-      </Link>
-      <div className="detail-layout">
-        <div className="detail-image">
-          <ProductImage src={product.image} alt={product.name} />
-        </div>
-        <div className="detail-copy">
-          <p className="eyebrow">{product.category}</p>
-          <h1>{product.name}</h1>
-          <div className="detail-rating">
-            ★ {product.rating} <span>{product.reviews} reviews</span>
-          </div>
-          <p className="detail-description">{product.description}</p>
-          <div className="detail-price">
-            ${product.price}
-            <span>
-              {product.size} · {stock > 0 ? `${stock} in stock` : "Out of stock"}
-            </span>
-          </div>
-          <div className="detail-actions">
-            <button
-              className="primary-button"
-              disabled={stock <= 0}
-              onClick={handleAddToCart}
-            >
-              {stock > 0
-                ? added
-                  ? "Added to bag ✓"
-                  : "Add to bag"
-                : "Out of stock"}{" "}
-              <ShoppingBag size={16} />
-            </button>
-            <button
-              className={wished ? "outline-button active" : "outline-button"}
-              onClick={() => toggleWishlist(product.id)}
-            >
-              <Heart size={17} fill={wished ? "currentColor" : "none"} />{" "}
-              {wished ? "Saved" : "Save"}
-            </button>
-          </div>
-          <div className="detail-note">
-            <span>✦</span>
-            <p>
-              Free shipping on orders over $50
-              <br />
-              <span>Easy returns within 30 days</span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <section className="reviews-section">
-        <div>
-          <p className="eyebrow">Community notes</p>
-          <h2>
-            Reviews from <i>real rituals.</i>
-          </h2>
-        </div>
-        <div className="reviews-list">
-          {productReviews.length ? (
-            productReviews.map((item) => (
-              <article
-                className="review"
-                key={item._id || `${item.createdAt}-${item.name}`}
-              >
-                <strong>{"★".repeat(item.rating)}</strong>
-                <p>{item.text}</p>
-                <span>
-                  {item.name}{" "}
-                  {item.createdAt && (
-                    <small style={{ opacity: 0.6, fontSize: "0.8rem" }}>
-                      · {new Date(item.createdAt).toLocaleDateString()}
-                    </small>
-                  )}
+    <div className="workspace-page">
+      {/* Workspace Header */}
+      <div className="workspace-header">
+        <div className="workspace-header-top">
+          <div className="workspace-meta">
+            <h1>
+              <FolderGit2 size={28} color="var(--primary)" />
+              {project.name}
+              {project.isPublic && (
+                <span className="tag-pill" style={{ fontSize: "0.75rem", background: "rgba(16, 185, 129, 0.1)", color: "#10b981" }}>
+                  🌐 Public
                 </span>
-                {user &&
-                  (user.role === "admin" || user.id === item.userId) && (
-                    <button
-                      className="review-delete"
-                      onClick={() => handleDeleteReview(item._id)}
-                    >
-                      Delete review
-                    </button>
-                  )}
-              </article>
-            ))
-          ) : (
-            <p className="muted-copy">
-              Be the first to share a note about this formula.
-            </p>
-          )}
-        </div>
-
-        <form className="review-form" onSubmit={handleSubmitReview}>
-          <p className="filter-label">Leave a review</p>
-          <input
-            placeholder="Your name"
-            value={reviewForm.name}
-            onChange={(event) =>
-              setReviewForm({ ...reviewForm, name: event.target.value })
-            }
-            required
-          />
-          <select
-            value={reviewForm.rating}
-            onChange={(event) =>
-              setReviewForm({
-                ...reviewForm,
-                rating: Number(event.target.value),
-              })
-            }
-          >
-            {[5, 4, 3, 2, 1].map((stars) => (
-              <option key={stars} value={stars}>
-                {stars} {stars === 1 ? "star" : "stars"}
-              </option>
-            ))}
-          </select>
-          <textarea
-            placeholder="Your experience with this skincare product..."
-            value={reviewForm.text}
-            onChange={(event) =>
-              setReviewForm({ ...reviewForm, text: event.target.value })
-            }
-            required
-          />
-          <button className="primary-button" disabled={reviewSubmitting}>
-            {reviewSubmitting ? "Submitting..." : "Share review"}
-          </button>
-        </form>
-      </section>
-    </main>
-  );
-}
-
-function CartPage() {
-  const { cart, updateQuantity, removeFromCart } = useShop();
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0,
-  );
-  const freeShippingNeeded = Math.max(0, 50 - subtotal);
-
-  return (
-    <main className="cart-page">
-      <div className="cart-heading">
-        <div>
-          <p className="eyebrow">Your ritual</p>
-          <h1>
-            Your bag <i>({cart.length})</i>
-          </h1>
-        </div>
-        <Link to="/shop" className="text-button">
-          Continue shopping <ArrowRight size={15} />
-        </Link>
-      </div>
-
-      {cart.length ? (
-        <div className="cart-layout">
-          <div className="cart-items">
-            {cart.map((item) => (
-              <div className="cart-item" key={item.id}>
-                <ProductImage src={item.image} alt={item.name} />
-                <div className="cart-item-info">
-                  <Link to={`/product/${item.id}`}>{item.name}</Link>
-                  <span>
-                    {item.size} · ${item.price}
-                  </span>
-                  <div className="quantity">
-                    <button
-                      onClick={() => updateQuantity(item.id, -1)}
-                      aria-label="Decrease quantity"
-                    >
-                      -
-                    </button>
-                    <b>{item.quantity}</b>
-                    <button
-                      onClick={() => updateQuantity(item.id, 1)}
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-                <button
-                  className="remove-button"
-                  onClick={() => removeFromCart(item.id)}
-                  aria-label={`Remove ${item.name}`}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <aside className="summary">
-            <p className="filter-label">Order summary</p>
-            <div className="summary-line">
-              <span>Subtotal</span>
-              <b>${subtotal.toFixed(2)}</b>
-            </div>
-            <div className="summary-line">
-              <span>Estimated shipping</span>
-              <b>{subtotal >= 50 ? "Free" : "$5.00"}</b>
-            </div>
-            <hr />
-            <div className="summary-total">
-              <span>Estimated total</span>
-              <b>${(subtotal + (subtotal >= 50 ? 0 : 5)).toFixed(2)}</b>
-            </div>
-
-            <p className="secure-note" style={{ margin: "1rem 0" }}>
-              {freeShippingNeeded > 0 ? (
-                <>✦ Add ${freeShippingNeeded.toFixed(2)} more for Free Shipping</>
-              ) : (
-                <>✦ You have unlocked Free Standard Shipping!</>
               )}
+            </h1>
+            <p style={{ color: "var(--text-secondary)", marginTop: "4px" }}>
+              {project.description || "Collaborative project workspace"}
             </p>
-
-            <Link
-              to="/checkout"
-              className="primary-button checkout-button"
-              style={{ textAlign: "center", textDecoration: "none" }}
-            >
-              Proceed to checkout <ArrowRight size={16} />
-            </Link>
-          </aside>
-        </div>
-      ) : (
-        <div className="empty-state cart-empty">
-          <ShoppingBag size={30} />
-          <h2>Your bag is empty.</h2>
-          <p>Explore our considered formulas and start your ritual.</p>
-          <Link to="/shop" className="primary-button">
-            Shop the collection <ArrowRight size={15} />
-          </Link>
-        </div>
-      )}
-    </main>
-  );
-}
-
-function WishlistPage() {
-  const { products, wishlist, loading } = useShop();
-  const saved = products.filter((product) => wishlist.includes(product.id));
-
-  return (
-    <main className="wishlist-page">
-      <div className="cart-heading">
-        <div>
-          <p className="eyebrow">Your saved edit</p>
-          <h1>
-            Wishlist <i>({saved.length})</i>
-          </h1>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="empty-state cart-empty">
-          <h2>Loading your wishlist.</h2>
-        </div>
-      ) : saved.length ? (
-        <div className="product-grid">
-          {saved.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      ) : (
-        <div className="empty-state cart-empty">
-          <Heart size={30} />
-          <h2>Nothing saved yet.</h2>
-          <p>Keep the formulas that make you curious close by.</p>
-          <Link to="/shop" className="primary-button">
-            Find your favorites <ArrowRight size={15} />
-          </Link>
-        </div>
-      )}
-    </main>
-  );
-}
-
-function AboutPage() {
-  return (
-    <main className="editorial-page">
-      <section className="editorial-hero">
-        <div>
-          <p className="eyebrow">A softer kind of skincare</p>
-          <h1>
-            Good skin is a <i>daily feeling.</i>
-          </h1>
-          <p>
-            We started Luma with one simple belief: skincare should bring you
-            back to yourself, not add more noise to your day.
-          </p>
-        </div>
-        <img
-          src="https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=1200&q=85"
-          alt="Luma skincare products beside a towel"
-        />
-      </section>
-      <section className="editorial-split">
-        <div>
-          <p className="eyebrow">Our point of view</p>
-          <h2>
-            Small formulas.
-            <br />
-            <i>Real rituals.</i>
-          </h2>
-        </div>
-        <div>
-          <p>
-            Every Luma formula is made with a short, purposeful ingredient list
-            and a clear role in your routine. No overcomplicated steps. No
-            pressure to chase perfect skin.
-          </p>
-          <p>
-            Just thoughtful care for the skin you have today, made in small
-            batches and tested on sensitive skin.
-          </p>
-          <Link to="/shop" className="text-button">
-            Meet the collection <ArrowRight size={15} />
-          </Link>
-        </div>
-      </section>
-      <section className="values-grid">
-        <div>
-          <strong>01</strong>
-          <h3>Considered</h3>
-          <p>Ingredients chosen for comfort, function, and everyday use.</p>
-        </div>
-        <div>
-          <strong>02</strong>
-          <h3>Gentle</h3>
-          <p>Formulas that support your barrier instead of fighting it.</p>
-        </div>
-        <div>
-          <strong>03</strong>
-          <h3>Honest</h3>
-          <p>Clear rituals, clear textures, and no impossible promises.</p>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function JournalPage() {
-  const { journal } = useShop();
-
-  return (
-    <main className="journal-page">
-      <section className="journal-heading">
-        <p className="eyebrow">The Luma journal</p>
-        <h1>
-          Notes for a <i>slower</i> routine.
-        </h1>
-        <p>
-          Thoughts, rituals, and ingredient wisdom for making skincare feel like
-          yours.
-        </p>
-      </section>
-      <div className="journal-list">
-        {journal.map((entry, index) => (
-          <article className="journal-entry" key={entry.title}>
-            <span>0{index + 1}</span>
-            <div>
-              <p className="eyebrow">{entry.type}</p>
-              <h2>{entry.title}</h2>
-              <p>{entry.text}</p>
-            </div>
-            <ArrowRight size={20} />
-          </article>
-        ))}
-      </div>
-    </main>
-  );
-}
-
-function ContactPage() {
-  const { contact, addMessage } = useShop();
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
-  const [sent, setSent] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const submitMessage = async (event) => {
-    event.preventDefault();
-    setIsSubmitting(true);
-
-    await addMessage(form);
-    setForm({ name: "", email: "", message: "" });
-    setSent(true);
-    setIsSubmitting(false);
-  };
-
-  return (
-    <main className="contact-page">
-      <section>
-        <p className="eyebrow">We are here</p>
-        <h1>
-          Have a <i>question?</i>
-        </h1>
-        <p>
-          Our small team reads every note. Reach us{" "}
-          {contact.hours || "Monday to Friday"}.
-        </p>
-      </section>
-      <div className="contact-grid">
-        <a href={`mailto:${contact.email}`}>
-          <span>Email us</span>
-          <strong>{contact.email}</strong>
-          <ArrowRight size={18} />
-        </a>
-        <a href={`tel:${contact.phone}`}>
-          <span>Call us</span>
-          <strong>{contact.phone}</strong>
-          <ArrowRight size={18} />
-        </a>
-        <div>
-          <span>Visit our studio</span>
-          <strong>
-            {contact.address.split("\n").map((line) => (
-              <span key={line}>
-                {line}
-                <br />
-              </span>
-            ))}
-          </strong>
-        </div>
-      </div>
-      <form className="contact-form" onSubmit={submitMessage}>
-        <div className="contact-form-heading">
-          <div>
-            <p className="eyebrow">Send a note</p>
-            <h2>Let&apos;s talk skincare.</h2>
           </div>
-          <span>We usually reply within 1–2 business days.</span>
+
+          <div className="workspace-actions">
+            {project.isPublic && (
+              <button className="btn btn-secondary btn-sm" onClick={copyShareLink}>
+                {copiedLink ? <Check size={14} color="#10b981" /> : <Share2 size={14} />}
+                {copiedLink ? "Link Copied!" : "Share Link"}
+              </button>
+            )}
+            <button className="btn btn-ai btn-sm" onClick={handleGenerateReadme}>
+              <Sparkles size={14} /> AI README
+            </button>
+          </div>
         </div>
-        {sent && (
-          <p className="success-copy" role="status">
-            Thanks, your message has been sent. We&apos;ll be in touch soon.
-          </p>
-        )}
-        <label>
-          Your name
-          <input
-            name="name"
-            autoComplete="name"
-            placeholder="Jane Smith"
-            value={form.name}
-            onChange={(event) =>
-              setForm({ ...form, name: event.target.value })
-            }
-            required
-          />
-        </label>
-        <label>
-          Email address
-          <input
-            name="email"
-            type="email"
-            autoComplete="email"
-            placeholder="jane@example.com"
-            value={form.email}
-            onChange={(event) =>
-              setForm({ ...form, email: event.target.value })
-            }
-            required
-          />
-        </label>
-        <label>
-          Your message
-          <textarea
-            name="message"
-            placeholder="Tell us how we can help..."
-            maxLength={2000}
-            value={form.message}
-            onChange={(event) =>
-              setForm({ ...form, message: event.target.value })
-            }
-            required
-          />
-          <span className="character-count">{form.message.length}/2000</span>
-        </label>
-        <button className="primary-button" disabled={isSubmitting}>
-          {isSubmitting ? "Sending..." : "Send message"}
-          {!isSubmitting && <ArrowRight size={17} />}
-        </button>
-      </form>
-    </main>
-  );
-}
 
-function CheckoutPage() {
-  const { cart, placeOrder, user, quickLogin } = useShop();
-  const [email, setEmail] = useState(() => user?.email || "");
-  const [name, setName] = useState(() => user?.name || "");
-  const [country, setCountry] = useState("US");
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [zip, setZip] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [placedOrder, setPlacedOrder] = useState(null);
-  const [error, setError] = useState("");
-
-  const selectedCountry = countries.find((c) => c.code === country);
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0,
-  );
-  const shipping = subtotal >= 50 ? 0 : selectedCountry?.shipping || 5;
-  const total = subtotal + shipping;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name || !email || !address || !city || !state || !zip) {
-      setError("Please fill in all shipping fields");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const order = await placeOrder({
-        customer: { email, name, country, address, city, state, zip },
-        items: cart,
-        subtotal,
-        shipping,
-        total,
-      });
-      setPlacedOrder(order);
-    } catch (err) {
-      setError("Order could not be processed: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (placedOrder) {
-    return (
-      <main className="checkout-page">
-        <div className="order-success">
-          <p className="eyebrow">Order received</p>
-          <h1>
-            Thank you,{" "}
-            {placedOrder.customer?.name?.split(" ")[0] || "there"}.
-          </h1>
-          <p>
-            Your skincare order has been placed successfully in the database! Tracking
-            updates will be sent to <b>{placedOrder.customer?.email}</b>.
-          </p>
-          <strong>Order number: {placedOrder.id}</strong>
-
-          <div
-            style={{
-              marginTop: "1.5rem",
-              marginBottom: "1.5rem",
-              textAlign: "left",
-              padding: "1.2rem",
-              borderRadius: "10px",
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              maxWidth: "480px",
-              marginLeft: "auto",
-              marginRight: "auto",
-            }}
+        {/* Tab Navigation */}
+        <div className="workspace-tabs">
+          <button
+            className={`tab-btn ${activeTab === "overview" ? "active" : ""}`}
+            onClick={() => setActiveTab("overview")}
           >
-            <p
-              style={{
-                margin: "0 0 0.5rem",
-                fontWeight: 600,
-                fontSize: "0.95rem",
-              }}
-            >
-              Shipping to:
-            </p>
-            <p
-              style={{
-                margin: 0,
-                opacity: 0.85,
-                fontSize: "0.9rem",
-                lineHeight: "1.4",
-              }}
-            >
-              {placedOrder.customer?.name}
-              <br />
-              {placedOrder.customer?.address}
-              <br />
-              {placedOrder.customer?.city}, {placedOrder.customer?.state}{" "}
-              {placedOrder.customer?.zip}
-            </p>
-            <hr
-              style={{
-                margin: "0.8rem 0",
-                borderColor: "var(--border)",
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "0.95rem",
-                fontWeight: 600,
-              }}
-            >
-              <span>Total Paid:</span>
-              <span>${placedOrder.total?.toFixed?.(2) || placedOrder.total}</span>
-            </div>
-          </div>
-
-          <Link to="/shop" className="primary-button">
-            Continue shopping <ArrowRight size={15} />
-          </Link>
+            <BarChart3 size={16} /> Overview & Analytics
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "notes" ? "active" : ""}`}
+            onClick={() => setActiveTab("notes")}
+          >
+            <FileText size={16} /> Markdown Notes ({notes.length})
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "files" ? "active" : ""}`}
+            onClick={() => setActiveTab("files")}
+          >
+            <Code2 size={16} /> Code & Assets ({files.length})
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "ai" ? "active" : ""}`}
+            onClick={() => setActiveTab("ai")}
+          >
+            <BrainCircuit size={16} /> Gemini AI Studio
+          </button>
+          <button
+            className={`tab-btn ${activeTab === "settings" ? "active" : ""}`}
+            onClick={() => setActiveTab("settings")}
+          >
+            <Settings size={16} /> Team & Settings
+          </button>
         </div>
-      </main>
-    );
-  }
-
-  if (!cart.length) {
-    return (
-      <main className="checkout-page">
-        <div className="empty-state">
-          <ShoppingBag size={30} />
-          <h2>Your bag is empty</h2>
-          <p>Add skincare essentials before proceeding to checkout.</p>
-          <Link to="/shop" className="primary-button">
-            Explore collection <ArrowRight size={15} />
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main className="checkout-page">
-      <div className="checkout-heading">
-        <p className="eyebrow">Complete your order</p>
-        <h1>Checkout</h1>
-        <Link to="/cart" className="text-button">
-          ← Back to cart
-        </Link>
       </div>
-      <div className="checkout-layout">
-        <form className="checkout-form" onSubmit={handleSubmit}>
-          {error && <p className="checkout-error">{error}</p>}
 
-          {!user && (
-            <div
-              style={{
-                marginBottom: "1rem",
-                padding: "0.8rem",
-                background: "var(--surface)",
-                borderRadius: "8px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontSize: "0.85rem" }}>Have an account?</span>
-              <button
-                type="button"
-                className="outline-button"
-                style={{ fontSize: "0.8rem", padding: "0.4rem 0.8rem" }}
-                onClick={async () => {
-                  const u = await quickLogin("customer");
-                  if (u) {
-                    setEmail(u.email);
-                    setName(u.name);
-                  }
-                }}
-              >
-                1-Click Demo Sign In
+      {/* TAB 1: Overview & Contribution Analytics */}
+      {activeTab === "overview" && (
+        <div>
+          {/* Public Share Banner */}
+          {project.isPublic && (
+            <div className="share-link-banner">
+              <div>
+                <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                  🌐 Public Shareable URL:
+                </span>
+                <div className="share-link-text">
+                  {window.location.origin}/shared/{project.shareToken}
+                </div>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={copyShareLink}>
+                {copiedLink ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                {copiedLink ? "Copied" : "Copy URL"}
               </button>
             </div>
           )}
 
-          <fieldset>
-            <legend>Contact information</legend>
-            <input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <input
-              type="text"
-              placeholder="Full name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </fieldset>
-          <fieldset>
-            <legend>Shipping address</legend>
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-            >
-              {countries.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              placeholder="Street address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              required
-            />
-            <div className="form-row">
-              <input
-                type="text"
-                placeholder="City"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                required
-              />
-              <input
-                type="text"
-                placeholder="State / Province"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                required
-              />
-              <input
-                type="text"
-                placeholder="ZIP / Postal code"
-                value={zip}
-                onChange={(e) => setZip(e.target.value)}
-                required
-              />
+          <div className="analytics-grid">
+            {/* Member Contributions Breakdown */}
+            <div className="analytics-card">
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Activity size={18} color="var(--primary)" /> Member Contribution Analytics
+              </h3>
+
+              {analytics?.memberContributions?.length > 0 ? (
+                <div>
+                  {analytics.memberContributions.map((member) => {
+                    const totalActs = analytics.totalActions || 1;
+                    const percent = Math.round(((member.totalActions || 0) / totalActs) * 100);
+                    return (
+                      <div key={member.userId} className="member-contribution-row">
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "180px" }}>
+                          <img
+                            src={`https://api.dicebear.com/7.x/initials/svg?seed=${member.name}`}
+                            alt={member.name}
+                            style={{ width: "32px", height: "32px", borderRadius: "50%" }}
+                          />
+                          <div>
+                            <div style={{ fontSize: "0.875rem", fontWeight: 600 }}>{member.name}</div>
+                            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{member.role}</div>
+                          </div>
+                        </div>
+
+                        <div className="contribution-progress-bg">
+                          <div
+                            className="contribution-progress-fill"
+                            style={{ width: `${Math.max(percent, 8)}%` }}
+                          />
+                        </div>
+
+                        <div style={{ textAlign: "right", minWidth: "120px" }}>
+                          <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                            {percent}%
+                          </span>
+                          <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                            {member.notesCount} notes • {member.filesCount} files
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+                  No activity recorded yet. Create notes or upload files to track contributions.
+                </p>
+              )}
             </div>
-          </fieldset>
-          <button type="submit" className="primary-button" disabled={loading}>
-            {loading ? "Processing..." : "Place order"}{" "}
-            <ArrowRight size={16} />
-          </button>
-        </form>
-        <aside className="checkout-summary">
-          <p className="filter-label">Order summary</p>
-          <div className="summary-items">
-            {cart.map((item) => (
-              <div key={item.id} className="summary-item">
-                <span>
-                  {item.name} × {item.quantity}
-                </span>
-                <b>${(item.price * item.quantity).toFixed(2)}</b>
+
+            {/* Recent Activity Feed */}
+            <div className="analytics-card">
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "16px" }}>
+                Recent Activity
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {(analytics?.recentActivity || []).slice(0, 8).map((act, i) => (
+                  <div
+                    key={act._id || i}
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      fontSize: "0.85rem",
+                      paddingBottom: "10px",
+                      borderBottom: "1px solid var(--border)",
+                    }}
+                  >
+                    <Sparkles size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: "2px" }} />
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{act.userName}</span>{" "}
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {act.action.replace("_", " ")}
+                      </span>{" "}
+                      <span style={{ fontStyle: "italic" }}>"{act.targetName}"</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: Markdown Notes with Gemini AI */}
+      {activeTab === "notes" && (
+        <div className="notes-container">
+          {/* Notes Sidebar */}
+          <div className="notes-sidebar">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase", color: "var(--text-secondary)" }}>
+                Notes ({notes.length})
+              </span>
+              <button className="btn btn-primary btn-sm" onClick={handleCreateNote}>
+                <Plus size={14} /> New
+              </button>
+            </div>
+
+            <div className="notes-list">
+              {notes.map((note) => {
+                const isActive = (note._id || note.id) === (activeNote?._id || activeNote?.id);
+                return (
+                  <div
+                    key={note._id || note.id}
+                    className={`note-sidebar-item ${isActive ? "active" : ""}`}
+                    onClick={() => selectNote(note)}
+                  >
+                    <div className="note-sidebar-title">{note.title || "Untitled"}</div>
+                    <div className="note-sidebar-meta">
+                      By {note.authorName || "Member"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Main Markdown Editor */}
+          {activeNote ? (
+            <div className="note-editor-panel">
+              {/* Header */}
+              <div className="editor-header">
+                <input
+                  type="text"
+                  className="note-title-input"
+                  value={noteTitle}
+                  onChange={(e) => setNoteTitle(e.target.value)}
+                  placeholder="Note Title..."
+                />
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {/* Gemini AI Action Buttons */}
+                  <button
+                    className="btn btn-ai btn-sm"
+                    onClick={handleExplainNote}
+                    title="Ask Gemini to explain this note's architecture and logic"
+                  >
+                    <Sparkles size={14} /> Explain Note
+                  </button>
+
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleImproveNote}
+                    title="Ask Gemini for structural recommendations and improvements"
+                  >
+                    💡 Suggest Improvements
+                  </button>
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSaveNote}
+                    disabled={noteSaving}
+                  >
+                    {noteSaving ? "Saving..." : "Save Note"}
+                  </button>
+
+                  <button
+                    className="icon-btn"
+                    onClick={() => handleDeleteNote(activeNote._id || activeNote.id)}
+                    title="Delete Note"
+                  >
+                    <Trash2 size={16} color="var(--danger)" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Formatting Toolbar */}
+              <div className="editor-toolbar">
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}\n# `)}
+                  title="Heading 1"
+                >
+                  H1
+                </button>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}\n## `)}
+                  title="Heading 2"
+                >
+                  H2
+                </button>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}**Bold Text**`)}
+                  title="Bold"
+                >
+                  B
+                </button>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}*Italic Text*`)}
+                  title="Italic"
+                >
+                  I
+                </button>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}\n\`\`\`javascript\n// code here\n\`\`\`\n`)}
+                  title="Code Block"
+                >
+                  &lt;/&gt;
+                </button>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}\n- `)}
+                  title="Bullet List"
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  className="toolbar-btn"
+                  onClick={() => setNoteContent((prev) => `${prev}\n> `)}
+                  title="Quote"
+                >
+                  Quote
+                </button>
+
+                <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+                  <button
+                    type="button"
+                    className={`toolbar-btn ${editorMode === "write" ? "active" : ""}`}
+                    onClick={() => setEditorMode("write")}
+                  >
+                    Write
+                  </button>
+                  <button
+                    type="button"
+                    className={`toolbar-btn ${editorMode === "split" ? "active" : ""}`}
+                    onClick={() => setEditorMode("split")}
+                  >
+                    Split
+                  </button>
+                  <button
+                    type="button"
+                    className={`toolbar-btn ${editorMode === "preview" ? "active" : ""}`}
+                    onClick={() => setEditorMode("preview")}
+                  >
+                    Preview
+                  </button>
+                </div>
+              </div>
+
+              {/* Split Editor / Preview */}
+              <div
+                className={`editor-split-container ${
+                  editorMode === "write"
+                    ? "write-only"
+                    : editorMode === "preview"
+                    ? "preview-only"
+                    : ""
+                }`}
+              >
+                {editorMode !== "preview" && (
+                  <textarea
+                    className="editor-textarea"
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    placeholder="Write your markdown here..."
+                  />
+                )}
+                {editorMode !== "write" && (
+                  <div className="editor-preview">
+                    {renderMarkdown(noteContent)}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: "60px", textAlign: "center", color: "var(--text-secondary)" }}>
+              Select a note or create one to begin writing.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: File Upload & Code Assets */}
+      {activeTab === "files" && (
+        <div>
+          {/* Upload Dropzone */}
+          <div className="files-upload-zone">
+            <input
+              type="file"
+              id="project-file-input"
+              style={{ display: "none" }}
+              onChange={handleFileUpload}
+            />
+            <label htmlFor="project-file-input" style={{ cursor: "pointer", display: "block" }}>
+              <UploadCloud size={36} color="var(--primary)" style={{ marginBottom: "8px" }} />
+              <div style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text-primary)" }}>
+                {uploading ? "Uploading asset..." : "Upload Project Files & Code Assets"}
+              </div>
+              <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+                Supports JavaScript (.js), Python (.py), HTML, CSS, JSON, Markdown (.md), images (.png, .jpg, .svg)
+              </p>
+            </label>
+            <div style={{ marginTop: "12px" }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setNewCodeModal(true)}
+              >
+                <FileCode size={14} /> + Create Code Snippet Directly
+              </button>
+            </div>
+          </div>
+
+          {/* Files Grid */}
+          <div className="files-grid">
+            {files.map((file) => {
+              const isCode = file.fileType === "code";
+              const isImage = file.fileType === "image";
+              return (
+                <div key={file._id || file.id} className="file-card">
+                  <div className="file-info">
+                    <div className={`file-icon ${file.fileType || "document"}`}>
+                      {isCode ? <FileCode size={20} /> : isImage ? <FileImage size={20} /> : <File size={20} />}
+                    </div>
+                    <div>
+                      <div className="file-name" title={file.originalName}>
+                        {file.originalName}
+                      </div>
+                      <div className="file-meta">
+                        {Math.round((file.size || 0) / 1024)} KB • By {file.uploadedByName || "Member"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="file-actions">
+                    <button
+                      className="icon-btn"
+                      onClick={() => setPreviewFile(file)}
+                      title="Preview File"
+                    >
+                      <Eye size={16} />
+                    </button>
+
+                    {/* Gemini AI: Explain Code */}
+                    {isCode && (
+                      <button
+                        className="icon-btn"
+                        style={{ color: "#a855f7" }}
+                        onClick={() => handleExplainCode(file)}
+                        title="Explain Code with Gemini"
+                      >
+                        <Sparkles size={16} />
+                      </button>
+                    )}
+
+                    <a
+                      href={`${API_URL}/files/${file._id || file.id}/download`}
+                      className="icon-btn"
+                      title="Download"
+                      download
+                    >
+                      <Download size={16} />
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* File Preview Modal */}
+          {previewFile && (
+            <div className="modal-backdrop" onClick={() => setPreviewFile(null)}>
+              <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <FileCode size={20} color="var(--primary)" />
+                    <h3 style={{ fontSize: "1.1rem", fontWeight: 600 }}>{previewFile.originalName}</h3>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {previewFile.fileType === "code" && (
+                      <button
+                        className="btn btn-ai btn-sm"
+                        onClick={() => handleExplainCode(previewFile)}
+                      >
+                        <Sparkles size={14} /> Explain Code
+                      </button>
+                    )}
+                    <button className="icon-btn" onClick={() => setPreviewFile(null)}>
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="modal-body">
+                  {previewFile.fileType === "image" ? (
+                    <div style={{ textAlign: "center" }}>
+                      <img
+                        src={`${API_URL}/files/${previewFile._id || previewFile.id}/raw`}
+                        alt={previewFile.originalName}
+                        style={{ maxWidth: "100%", maxHeight: "60vh", borderRadius: "8px" }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="code-viewer-container">
+                      <div className="code-viewer-header">
+                        <span>Language: {previewFile.extension || "text"}</span>
+                        <span>Size: {Math.round((previewFile.size || 0) / 1024)} KB</span>
+                      </div>
+                      <div className="code-viewer-content">
+                        {previewFile.content || "// Code content is available in downloaded file"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Direct Code Snippet Modal */}
+          {newCodeModal && (
+            <div className="modal-backdrop" onClick={() => setNewCodeModal(false)}>
+              <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Create Code Snippet</h3>
+                  <button className="icon-btn" onClick={() => setNewCodeModal(false)}>
+                    <X size={18} />
+                  </button>
+                </div>
+                <form onSubmit={handleCreateCodeFile}>
+                  <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    <div>
+                      <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        Filename
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. authMiddleware.js or train_model.py"
+                        value={newCodeName}
+                        onChange={(e) => setNewCodeName(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          background: "var(--bg-app)",
+                          color: "var(--text-primary)",
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                        Code Content
+                      </label>
+                      <textarea
+                        rows={10}
+                        required
+                        value={newCodeContent}
+                        onChange={(e) => setNewCodeContent(e.target.value)}
+                        placeholder="// Write or paste source code here..."
+                        style={{
+                          width: "100%",
+                          padding: "12px",
+                          borderRadius: "8px",
+                          border: "1px solid var(--border)",
+                          background: "var(--bg-app)",
+                          color: "var(--text-primary)",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "0.85rem",
+                          lineHeight: "1.5",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setNewCodeModal(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary">
+                      Save Asset
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: Gemini AI Studio */}
+      {activeTab === "ai" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div className="analytics-card">
+            <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Sparkles size={20} color="#a855f7" /> Dedicated Gemini AI Endpoints & Studio
+            </h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginBottom: "20px" }}>
+              Generate comprehensive GitHub README files, auto-document code modules, or ask custom architectural questions using the Gemini AI API.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+              <div style={{ padding: "20px", background: "var(--bg-surface-elevated)", borderRadius: "10px", border: "1px solid var(--border)" }}>
+                <h4 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "6px" }}>
+                  📄 Auto-Generate README.md
+                </h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: "14px" }}>
+                  Invokes <code>/api/gemini/readme</code> to analyze notes and files, generating an end-to-end production README.
+                </p>
+                <button className="btn btn-ai btn-sm" onClick={handleGenerateReadme}>
+                  <Sparkles size={14} /> Generate Project README
+                </button>
+              </div>
+
+              <div style={{ padding: "20px", background: "var(--bg-surface-elevated)", borderRadius: "10px", border: "1px solid var(--border)" }}>
+                <h4 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "6px" }}>
+                  📚 Code Documentation Generator
+                </h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: "14px" }}>
+                  Invokes <code>/api/gemini/docs</code> to create developer reference documentation for code assets.
+                </p>
+                {files.length > 0 ? (
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleGenerateDocs(files[0])}>
+                    <Code2 size={14} /> Document {files[0].originalName}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    Upload a code file first
+                  </span>
+                )}
+              </div>
+
+              <div style={{ padding: "20px", background: "var(--bg-surface-elevated)", borderRadius: "10px", border: "1px solid var(--border)", gridColumn: "1 / -1" }}>
+                <h4 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <BrainCircuit size={16} color="var(--primary)" /> Ask Gemini About Project Architecture
+                </h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: "14px" }}>
+                  Ask any question about architecture patterns, security, refactoring, or edge cases.
+                </p>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <input
+                    type="text"
+                    placeholder="e.g. How should we implement WebSocket cursor synchronization?"
+                    value={aiPromptInput}
+                    onChange={(e) => setAiPromptInput(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: "260px",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border)",
+                      background: "var(--bg-app)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ai btn-sm"
+                    onClick={async () => {
+                      if (!aiPromptInput.trim()) return;
+                      setAiModalOpen(true);
+                      setAiModalTitle("🤖 Gemini AI Architectural Advisory");
+                      setAiModalLoading(true);
+                      try {
+                        const res = await fetch(`${API_URL}/gemini/explain`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            text: `Project: ${project?.name}\nDescription: ${project?.description}\nQuestion: ${aiPromptInput}`,
+                            type: "architecture",
+                            language: "general",
+                          }),
+                        });
+                        const data = await res.json();
+                        setAiModalContent(data.data?.explanation || "No response generated.");
+                      } catch (err) {
+                        setAiModalContent(`Error: ${err.message}`);
+                      } finally {
+                        setAiModalLoading(false);
+                      }
+                    }}
+                  >
+                    Ask Gemini
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: Team & Settings */}
+      {activeTab === "settings" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px", maxWidth: "800px" }}>
+          {/* Member Invitation */}
+          <div className="analytics-card">
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "12px" }}>
+              Project Members ({project.members?.length || 1})
+            </h3>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
+              {(project.members || []).map((m) => (
+                <div
+                  key={m.userId}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "10px 14px",
+                    background: "var(--bg-surface-elevated)",
+                    borderRadius: "8px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <img
+                      src={`https://api.dicebear.com/7.x/initials/svg?seed=${m.name}`}
+                      alt={m.name}
+                      style={{ width: "28px", height: "28px", borderRadius: "50%" }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{m.name}</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{m.email}</div>
+                    </div>
+                  </div>
+                  <span className={`badge-role ${m.role}`}>{m.role}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Invite Form */}
+            <form onSubmit={handleInviteMember} style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <input
+                type="email"
+                required
+                placeholder="Collaborator's email (e.g. sarah@collabsphere.dev)"
+                value={memberEmail}
+                onChange={(e) => setMemberEmail(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-app)",
+                  color: "var(--text-primary)",
+                  minWidth: "220px",
+                }}
+              />
+              <select
+                value={memberRole}
+                onChange={(e) => setMemberRole(e.target.value)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-app)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                <option value="collaborator">Collaborator</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button type="submit" disabled={inviting} className="btn btn-primary btn-sm">
+                <Users size={14} /> {inviting ? "Adding..." : "Add Member"}
+              </button>
+            </form>
+            {inviteError && (
+              <p style={{ color: "var(--danger)", fontSize: "0.8rem", marginTop: "8px" }}>
+                {inviteError}
+              </p>
+            )}
+          </div>
+
+          {/* Delete Project (Owner Only) */}
+          {isOwner && (
+            <div className="analytics-card" style={{ borderColor: "rgba(239, 68, 68, 0.4)" }}>
+              <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--danger)", marginBottom: "6px" }}>
+                Danger Zone: Delete Project
+              </h3>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "14px" }}>
+                Permanently removes this project along with all associated Markdown notes, files, and activity logs.
+              </p>
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={async () => {
+                  if (confirm(`Are you sure you want to delete ${project.name}? This action cannot be undone.`)) {
+                    await fetch(`${API_URL}/projects/${projectId}`, {
+                      method: "DELETE",
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    navigate("/dashboard");
+                  }
+                }}
+              >
+                <Trash2 size={14} /> Delete Project Forever
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* GEMINI AI OUTPUT MODAL */}
+      {aiModalOpen && (
+        <div className="modal-backdrop" onClick={() => setAiModalOpen(false)}>
+          <div className="modal-card" style={{ maxWidth: "850px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ background: "var(--bg-surface-elevated)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <Sparkles size={20} color="#a855f7" />
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>{aiModalTitle}</h3>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(aiModalContent);
+                    alert("AI output copied to clipboard!");
+                  }}
+                >
+                  <Copy size={14} /> Copy
+                </button>
+                <button className="icon-btn" onClick={() => setAiModalOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-body">
+              {aiModalLoading ? (
+                <div style={{ padding: "40px", textAlign: "center" }}>
+                  <Sparkles size={32} color="#a855f7" style={{ animation: "spin 2s linear infinite" }} />
+                  <p style={{ marginTop: "12px", color: "var(--text-secondary)", fontWeight: 600 }}>
+                    Gemini AI is analyzing content and generating response...
+                  </p>
+                </div>
+              ) : (
+                renderMarkdown(aiModalContent)
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Public Shareable Project Page (Read-Only)
+function PublicProjectPage() {
+  const { shareToken } = useParams();
+  const [project, setProject] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [activeNote, setActiveNote] = useState(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/projects/public/${shareToken}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && data.project) {
+          setProject(data.project);
+          if (data.project.notes?.length > 0) {
+            setActiveNote(data.project.notes[0]);
+          }
+        } else {
+          setError(data.error || "Shared project not found");
+        }
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [shareToken]);
+
+  if (loading) {
+    return (
+      <div style={{ padding: "60px", textAlign: "center", color: "var(--text-secondary)" }}>
+        Loading shared workspace...
+      </div>
+    );
+  }
+
+  if (error || !project) {
+    return (
+      <div style={{ padding: "60px", textAlign: "center" }}>
+        <h2>{error || "Project Not Found"}</h2>
+        <Link to="/" className="btn btn-primary" style={{ marginTop: "16px" }}>
+          Go to CollabSphere Home
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: "1100px", margin: "40px auto", padding: "0 24px" }}>
+      <div
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "16px",
+          padding: "32px",
+          marginBottom: "24px",
+          boxShadow: "var(--card-shadow)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+          <div>
+            <span style={{ fontSize: "0.75rem", background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "2px 8px", borderRadius: "4px", fontWeight: 600 }}>
+              🌐 Public Read-Only View
+            </span>
+            <h1 style={{ fontSize: "2rem", fontWeight: 700, margin: "8px 0" }}>{project.name}</h1>
+            <p style={{ color: "var(--text-secondary)", maxWidth: "700px" }}>{project.description}</p>
+          </div>
+          <Link to="/login" className="btn btn-primary btn-sm">
+            Sign In to Collaborate
+          </Link>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", marginTop: "16px", flexWrap: "wrap" }}>
+          {(project.tags || []).map((t, idx) => (
+            <span key={idx} className="tag-pill">
+              #{t}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Public Notes & Files */}
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "20px" }}>
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "12px", padding: "16px" }}>
+          <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "12px", textTransform: "uppercase", color: "var(--text-secondary)" }}>
+            Public Notes ({project.notes?.length || 0})
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {(project.notes || []).map((n) => (
+              <div
+                key={n._id || n.id}
+                onClick={() => setActiveNote(n)}
+                style={{
+                  padding: "10px",
+                  borderRadius: "8px",
+                  background: (activeNote?._id || activeNote?.id) === (n._id || n.id) ? "var(--primary-light)" : "var(--bg-surface-elevated)",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{n.title}</div>
+                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>By {n.authorName}</div>
               </div>
             ))}
           </div>
-          <hr />
-          <div className="summary-line">
-            <span>Subtotal</span>
-            <b>${subtotal.toFixed(2)}</b>
-          </div>
-          <div className="summary-line">
-            <span>Shipping ({selectedCountry?.name})</span>
-            <b>{shipping === 0 ? "Free" : `$${shipping.toFixed(2)}`}</b>
-          </div>
-          <div className="summary-line">
-            <span>Estimated tax</span>
-            <b>$0.00 (Included)</b>
-          </div>
-          <hr />
-          <div className="summary-total">
-            <span>Total</span>
-            <b>${total.toFixed(2)}</b>
-          </div>
-          <p className="secure-note">
-            ✦ Full Stack REST API Order Processing
-            <br />✦{" "}
-            {subtotal >= 50
-              ? "Free standard shipping unlocked"
-              : `Standard shipping: $${shipping.toFixed(2)}`}
-          </p>
-        </aside>
+        </div>
+
+        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "12px", padding: "24px" }}>
+          {activeNote ? (
+            <div>
+              <h2 style={{ fontSize: "1.4rem", fontWeight: 700, marginBottom: "16px", borderBottom: "1px solid var(--border)", paddingBottom: "8px" }}>
+                {activeNote.title}
+              </h2>
+              {renderMarkdown(activeNote.content)}
+            </div>
+          ) : (
+            <p style={{ color: "var(--text-secondary)" }}>No note selected.</p>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
-function App() {
+// Main App Router & State Provider
+export default function App() {
+  const [token, setToken] = useState(() => localStorage.getItem("collab-token") || "");
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem("collab-user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [darkMode, setDarkMode] = useState(
+    () => localStorage.getItem("collab-theme") === "dark",
+  );
+  const [backendStatus, setBackendStatus] = useState("checking");
+
+  // Ping backend health
+  useEffect(() => {
+    fetch(`${API_URL}/health`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.status === "ok") setBackendStatus("online");
+        else setBackendStatus("fallback");
+      })
+      .catch(() => setBackendStatus("fallback"));
+  }, []);
+
+  // Theme attribute
+  useEffect(() => {
+    document.documentElement.setAttribute(
+      "data-theme",
+      darkMode ? "dark" : "light",
+    );
+    localStorage.setItem("collab-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
+
+  // Auth methods
+  const login = async (email, password) => {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Login failed");
+    setToken(data.data.token);
+    setUser(data.data.user);
+    localStorage.setItem("collab-token", data.data.token);
+    localStorage.setItem("collab-user", JSON.stringify(data.data.user));
+    return data.data.user;
+  };
+
+  const register = async (name, email, password, bio) => {
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password, bio }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Registration failed");
+    setToken(data.data.token);
+    setUser(data.data.user);
+    localStorage.setItem("collab-token", data.data.token);
+    localStorage.setItem("collab-user", JSON.stringify(data.data.user));
+    return data.data.user;
+  };
+
+  const quickLogin = async (type = "alex") => {
+    const email =
+      type === "sarah" ? "sarah@collabsphere.dev" : "alex@collabsphere.dev";
+    return login(email, "collab123");
+  };
+
+  const logout = () => {
+    setToken("");
+    setUser(null);
+    localStorage.removeItem("collab-token");
+    localStorage.removeItem("collab-user");
+  };
+
+  const authValue = useMemo(
+    () => ({ user, token, login, register, quickLogin, logout }),
+    [user, token],
+  );
+
   return (
-    <BrowserRouter>
-      <ShopProvider>
-        <ScrollToTop />
-        <ApiNotice />
-        <Header />
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/shop" element={<ShopPage />} />
-          <Route path="/product/:id" element={<ProductPage />} />
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/wishlist" element={<WishlistPage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="/journal" element={<JournalPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/login" element={<AuthPage />} />
-          <Route path="/register" element={<AuthPage mode="register" />} />
-          <Route
-            path="/auth/google/callback"
-            element={<GoogleAuthCallbackPage />}
-          />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="*" element={<HomePage />} />
-        </Routes>
-        <footer>
-          <span>
-            luma<span className="brand-dot">.</span>
-          </span>
-          <nav>
-            <Link to="/about">About</Link>
-            <Link to="/journal">Journal</Link>
-            <Link to="/contact">Contact</Link>
-          </nav>
-          <span>© 2026 Luma skincare</span>
-        </footer>
-      </ShopProvider>
-    </BrowserRouter>
+    <AuthContext.Provider value={authValue}>
+      <BrowserRouter>
+        <Navbar
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          backendStatus={backendStatus}
+        />
+        <main>
+          <Routes>
+            <Route path="/" element={user ? <DashboardPage /> : <AuthPage />} />
+            <Route path="/login" element={<AuthPage />} />
+            <Route path="/register" element={<AuthPage />} />
+            <Route
+              path="/dashboard"
+              element={user ? <DashboardPage /> : <Navigate to="/login" replace />}
+            />
+            <Route
+              path="/project/:id"
+              element={user ? <ProjectWorkspacePage /> : <Navigate to="/login" replace />}
+            />
+            <Route path="/shared/:shareToken" element={<PublicProjectPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </BrowserRouter>
+    </AuthContext.Provider>
   );
 }
-
-export default App;

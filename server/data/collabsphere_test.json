@@ -1,0 +1,253 @@
+{
+  "users": [
+    {
+      "_id": "user_alex_1",
+      "name": "Alex Rivera",
+      "email": "alex@collabsphere.dev",
+      "role": "member",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      "bio": "Full Stack Architect & Cloud Engineer",
+      "createdAt": "2026-09-18T13:55:37.945Z",
+      "passwordHash": "$2b$12$0qIt8HhE2iJWAdyDhClsQuotZhm3sZm0L9a10OMEr3BL1c7dZr4da"
+    },
+    {
+      "_id": "user_sarah_2",
+      "name": "Sarah Chen",
+      "email": "sarah@collabsphere.dev",
+      "role": "member",
+      "avatar": "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80",
+      "bio": "Data Scientist & ML Researcher",
+      "createdAt": "2026-09-18T13:55:37.945Z",
+      "passwordHash": "$2b$12$YQ53jt.aPVoZeI1i7oCELO92yGr4Sguv/1Gzq4etsadXcE966Hj8C"
+    },
+    {
+      "_id": "user_david_3",
+      "name": "David Kim",
+      "email": "david@collabsphere.dev",
+      "role": "member",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+      "bio": "Frontend Developer & UI/UX Specialist",
+      "createdAt": "2026-09-18T13:55:37.945Z",
+      "passwordHash": "$2b$12$Z43ExnrTZRUABTMvpwxp7O5z1q44gEemX6zRr98rEn4QQPWGQJULK"
+    },
+    {
+      "_id": "user_admin_0",
+      "name": "CollabSphere Admin",
+      "email": "admin@collabsphere.dev",
+      "role": "admin",
+      "avatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80",
+      "bio": "System Administrator",
+      "createdAt": "2026-09-18T13:55:37.945Z",
+      "passwordHash": "$2b$12$zj/UGh0WLlXB1PoxrbgFLu4z2VVCLrn2oBp0okU/ZBKIL47YoCdYy"
+    }
+  ],
+  "projects": [
+    {
+      "_id": "proj_mywebapp_1",
+      "name": "MyWebApp",
+      "description": "Modern real-time collaborative web application with responsive dashboard, authentication, and live state synchronization.",
+      "tags": [
+        "react",
+        "node",
+        "jwt",
+        "collaboration",
+        "fullstack"
+      ],
+      "ownerId": "user_alex_1",
+      "ownerName": "Alex Rivera",
+      "ownerEmail": "alex@collabsphere.dev",
+      "members": [
+        {
+          "userId": "user_alex_1",
+          "name": "Alex Rivera",
+          "email": "alex@collabsphere.dev",
+          "role": "owner"
+        },
+        {
+          "userId": "user_sarah_2",
+          "name": "Sarah Chen",
+          "email": "sarah@collabsphere.dev",
+          "role": "collaborator"
+        },
+        {
+          "userId": "user_david_3",
+          "name": "David Kim",
+          "email": "david@collabsphere.dev",
+          "role": "collaborator"
+        }
+      ],
+      "isPublic": true,
+      "shareToken": "mywebapp-public-share-token",
+      "createdAt": "2026-09-13T13:55:37.945Z",
+      "updatedAt": "2026-09-18T13:55:37.945Z"
+    },
+    {
+      "_id": "proj_dataanalysis_2",
+      "name": "DataAnalysisScript",
+      "description": "Automated Python data processing pipeline, feature engineering, and statistical modeling for high-throughput metrics.",
+      "tags": [
+        "python",
+        "pandas",
+        "machine-learning",
+        "analytics"
+      ],
+      "ownerId": "user_sarah_2",
+      "ownerName": "Sarah Chen",
+      "ownerEmail": "sarah@collabsphere.dev",
+      "members": [
+        {
+          "userId": "user_sarah_2",
+          "name": "Sarah Chen",
+          "email": "sarah@collabsphere.dev",
+          "role": "owner"
+        },
+        {
+          "userId": "user_alex_1",
+          "name": "Alex Rivera",
+          "email": "alex@collabsphere.dev",
+          "role": "collaborator"
+        }
+      ],
+      "isPublic": true,
+      "shareToken": "data-script-analysis-share",
+      "createdAt": "2026-09-15T13:55:37.945Z",
+      "updatedAt": "2026-09-18T13:55:37.945Z"
+    }
+  ],
+  "notes": [
+    {
+      "_id": "note_arch_1",
+      "projectId": "proj_mywebapp_1",
+      "title": "Architecture Decisions & Core Tech Stack",
+      "content": "# MyWebApp Architecture Decisions\n\n## Overview\nMyWebApp is designed as a distributed, modular full-stack application prioritizing responsiveness, offline-first reliability, and seamless developer collaboration.\n\n### Core Stack\n- **Frontend**: React 19, Vite, React Router 7, Lucide Icons\n- **State Management**: Context API + optimistic updates with LocalStorage sync\n- **Backend API**: Express.js REST endpoints with JWT Bearer authentication\n- **Database Engine**: Dual-mode MongoDB Atlas with resilient local JSON fallback\n- **AI Acceleration**: Google Gemini 1.5 Flash for code explanation and documentation generation\n\n## Security & Authentication Flow\n1. Passwords hashed using bcrypt with salt rounds of 10.\n2. Signed JWTs with 7-day expiration containing user ID and role.\n3. Protected routes verify `Authorization: Bearer <token>` headers.\n4. Input sanitization prevents cross-site scripting and injection vectors.\n\n## Roadmap & Milestones\n- [x] JWT Authentication & session management\n- [x] Markdown notes with Gemini AI assistant\n- [x] Secure file uploads and syntax previews\n- [ ] WebSocket real-time cursor presence",
+      "authorId": "user_alex_1",
+      "authorName": "Alex Rivera",
+      "tags": [
+        "architecture",
+        "tech-stack"
+      ],
+      "createdAt": "2026-09-14T13:55:37.945Z",
+      "updatedAt": "2026-09-18T13:55:37.945Z"
+    },
+    {
+      "_id": "note_api_2",
+      "projectId": "proj_mywebapp_1",
+      "title": "API Design & Route Specifications",
+      "content": "# API Route Specifications\n\nAll API endpoints reside beneath the `/api` path prefix.\n\n### Authentication\n- `POST /api/auth/register` - Create account, returns token and user\n- `POST /api/auth/login` - Authenticate, returns token and user\n- `GET /api/auth/me` - Verify session and get current profile\n\n### Projects & Collaboration\n- `GET /api/projects` - List user's active projects\n- `POST /api/projects` - Create new project\n- `POST /api/projects/:id/members` - Invite collaborator by email\n- `GET /api/projects/public/:shareToken` - Public read-only view\n\n### Gemini AI Endpoints\n- `POST /api/gemini/explain` - Explain note content or code snippets\n- `POST /api/gemini/docs` - Generate comprehensive function documentation\n- `POST /api/gemini/readme` - Auto-generate GitHub-ready README.md",
+      "authorId": "user_sarah_2",
+      "authorName": "Sarah Chen",
+      "tags": [
+        "api",
+        "specs"
+      ],
+      "createdAt": "2026-09-16T13:55:37.945Z",
+      "updatedAt": "2026-09-18T13:55:37.945Z"
+    },
+    {
+      "_id": "note_etl_3",
+      "projectId": "proj_dataanalysis_2",
+      "title": "ETL Pipeline & Statistical Insights",
+      "content": "# ETL Pipeline & Model Insights\n\n## Pipeline Stages\n1. **Extraction**: Ingestion of multi-source tabular telemetry logs.\n2. **Transform**: Missing value imputation, IQR outlier trimming, standard scaling.\n3. **Load**: Fast Parquet serialization with column-level metadata.\n\n## Performance Benchmark\n- Ingestion time reduced by **43%** via vectorized Pandas transforms.\n- R² score on baseline validation set: **0.912**.",
+      "authorId": "user_sarah_2",
+      "authorName": "Sarah Chen",
+      "tags": [
+        "python",
+        "data-science"
+      ],
+      "createdAt": "2026-09-17T13:55:37.945Z",
+      "updatedAt": "2026-09-18T13:55:37.945Z"
+    }
+  ],
+  "files": [
+    {
+      "_id": "file_server_1",
+      "projectId": "proj_mywebapp_1",
+      "originalName": "server.js",
+      "filename": "server.js",
+      "mimeType": "application/javascript",
+      "size": 1420,
+      "extension": "js",
+      "fileType": "code",
+      "uploadedBy": "user_alex_1",
+      "uploadedByName": "Alex Rivera",
+      "content": "import express from \"express\";\nimport cors from \"cors\";\nimport dotenv from \"dotenv\";\n\ndotenv.config();\n\nconst app = express();\nconst PORT = process.env.PORT || 3001;\n\napp.use(cors());\napp.use(express.json());\n\n// Health check endpoint\napp.get(\"/api/health\", (req, res) => {\n  res.json({\n    status: \"online\",\n    timestamp: new Date().toISOString(),\n    service: \"CollabSphere API\"\n  });\n});\n\napp.listen(PORT, () => {\n  console.log(`Server running on http://localhost:${PORT}`);\n});",
+      "createdAt": "2026-09-15T13:55:37.945Z"
+    },
+    {
+      "_id": "file_pipeline_2",
+      "projectId": "proj_dataanalysis_2",
+      "originalName": "pipeline.py",
+      "filename": "pipeline.py",
+      "mimeType": "text/x-python",
+      "size": 1840,
+      "extension": "py",
+      "fileType": "code",
+      "uploadedBy": "user_sarah_2",
+      "uploadedByName": "Sarah Chen",
+      "content": "import pandas as pd\nimport numpy as np\n\ndef clean_dataset(dataframe: pd.DataFrame) -> pd.DataFrame:\n    \"\"\"Cleans raw telemetry dataset by removing nulls and standardizing columns.\"\"\"\n    df = dataframe.copy()\n    df.columns = [c.lower().strip().replace(\" \", \"_\") for c in df.columns]\n    \n    # Fill numerical nulls with median\n    num_cols = df.select_dtypes(include=[np.number]).columns\n    for col in num_cols:\n        df[col] = df[col].fillna(df[col].median())\n        \n    return df\n\nif __name__ == \"__main__\":\n    print(\"ETL Pipeline initialized successfully.\")",
+      "createdAt": "2026-09-16T13:55:37.945Z"
+    }
+  ],
+  "activities": [
+    {
+      "_id": "act_1",
+      "projectId": "proj_mywebapp_1",
+      "userId": "user_alex_1",
+      "userName": "Alex Rivera",
+      "action": "created_project",
+      "targetType": "project",
+      "targetName": "MyWebApp",
+      "createdAt": "2026-09-13T13:55:37.945Z"
+    },
+    {
+      "_id": "act_2",
+      "projectId": "proj_mywebapp_1",
+      "userId": "user_alex_1",
+      "userName": "Alex Rivera",
+      "action": "created_note",
+      "targetType": "note",
+      "targetName": "Architecture Decisions & Core Tech Stack",
+      "createdAt": "2026-09-14T13:55:37.945Z"
+    },
+    {
+      "_id": "act_3",
+      "projectId": "proj_mywebapp_1",
+      "userId": "user_alex_1",
+      "userName": "Alex Rivera",
+      "action": "uploaded_file",
+      "targetType": "file",
+      "targetName": "server.js",
+      "createdAt": "2026-09-15T13:55:37.945Z"
+    },
+    {
+      "_id": "act_4",
+      "projectId": "proj_mywebapp_1",
+      "userId": "user_sarah_2",
+      "userName": "Sarah Chen",
+      "action": "created_note",
+      "targetType": "note",
+      "targetName": "API Design & Route Specifications",
+      "createdAt": "2026-09-16T13:55:37.945Z"
+    },
+    {
+      "_id": "act_5",
+      "projectId": "proj_dataanalysis_2",
+      "userId": "user_sarah_2",
+      "userName": "Sarah Chen",
+      "action": "created_project",
+      "targetType": "project",
+      "targetName": "DataAnalysisScript",
+      "createdAt": "2026-09-15T13:55:37.945Z"
+    },
+    {
+      "_id": "act_6",
+      "projectId": "proj_dataanalysis_2",
+      "userId": "user_sarah_2",
+      "userName": "Sarah Chen",
+      "action": "uploaded_file",
+      "targetType": "file",
+      "targetName": "pipeline.py",
+      "createdAt": "2026-09-16T13:55:37.945Z"
+    }
+  ]
+}

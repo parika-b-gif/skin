@@ -2,44 +2,44 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import { ObjectId } from "mongodb";
-import Stripe from "stripe";
-import jwt from "jsonwebtoken";
+import formidable from "formidable";
+import { readFile, writeFile, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import {
   createToken,
   hashPassword,
   readToken,
   verifyPassword,
 } from "./auth.js";
-import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { initDatabase } from "./db.js";
+import {
+  explainContent,
+  generateCodeDocs,
+  generateProjectReadme,
+  suggestNoteImprovements,
+} from "./gemini.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = process.env.PORT || 3001;
 const mongoUri = process.env.MONGODB_URI;
-const databaseName = process.env.MONGODB_DB || "luma_store";
-const seedPath = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "data",
-  "store.json",
-);
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY)
-  : null;
+const databaseName = process.env.MONGODB_DB || "collabsphere_db";
+const storePath = path.join(__dirname, "data", "collabsphere.json");
+const uploadsDir = path.join(__dirname, "uploads");
 const jwtSecret =
-  process.env.JWT_SECRET || "local-development-jwt-secret-luma-skincare";
-const googleClientId = process.env.GOOGLE_CLIENT_ID;
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
-const googleRedirectUri =
-  process.env.GOOGLE_REDIRECT_URI ||
-  "http://localhost:3001/api/auth/google/callback";
-const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  process.env.JWT_SECRET || "collabsphere-jwt-secret-key-production-dev";
 
 let currentDbType = "unknown";
+let usersCollection;
+let projectsCollection;
+let notesCollection;
+let filesCollection;
+let activitiesCollection;
 
-// Permissive CORS for local Vite dev server
+// Permissive CORS for dev frontend
 app.use(
   cors({
     origin: (origin, callback) => callback(null, true),
@@ -47,1155 +47,1064 @@ app.use(
   }),
 );
 
+// Standard JSON body parsing
+app.use(express.json({ limit: "25mb" }));
+
 // Health check endpoint
-app.get("/api/health", (_request, response) => {
-  response.json({
+app.get("/api/health", (_req, res) => {
+  res.json({
     status: "ok",
+    service: "CollabSphere API",
     dbType: currentDbType,
     port,
+    hasGeminiKey: !!process.env.GEMINI_API_KEY,
     timestamp: new Date().toISOString(),
   });
 });
-app.post(
-  "/api/webhooks/stripe",
-  express.raw({ type: "application/json" }),
-  async (request, response) => {
-    if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET)
-      return response
-        .status(503)
-        .json({ error: "Stripe webhook is not configured" });
-    try {
-      const event = stripe.webhooks.constructEvent(
-        request.body,
-        request.headers["stripe-signature"],
-        process.env.STRIPE_WEBHOOK_SECRET,
-      );
-      if (event.type === "checkout.session.completed") {
-        const session = event.data.object;
-        const orderId = session.metadata?.orderId;
-        const order = await ordersCollection.findOne({ id: orderId });
-        if (order && order.paymentStatus !== "paid") {
-          await ordersCollection.updateOne(
-            { id: orderId },
-            {
-              $set: {
-                paymentStatus: "paid",
-                status: "processing",
-                paidAt: new Date(),
-              },
-            },
-          );
-          await Promise.all(
-            order.items.map((item) =>
-              productsCollection.updateOne(
-                { id: item.productId },
-                { $inc: { inventory: -item.quantity } },
-              ),
-            ),
-          );
-          await cartsCollection.deleteOne({ _id: order.sessionId });
-        }
-      }
-      response.json({ received: true });
-    } catch (error) {
-      response.status(400).send(`Webhook Error: ${error.message}`);
-    }
-  },
-);
-app.use(express.json());
 
-let productsCollection;
-let cartsCollection;
-let wishlistsCollection;
-let ordersCollection;
-let reviewsCollection;
-let contentCollection;
-let usersCollection;
-let contactMessagesCollection;
-
-const categoryMedia = {
-  Cleansers:
-    "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=900&q=85",
-  Serums:
-    "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=900&q=85",
-  Moisturizers:
-    "https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?auto=format&fit=crop&w=900&q=85",
-  "Sun Care":
-    "https://images.unsplash.com/photo-1556229010-6c3f2c9ca5f8?auto=format&fit=crop&w=900&q=85",
-  Treatments:
-    "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=900&q=85",
-  Toners:
-    "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=900&q=85",
-  Exfoliators:
-    "https://images.unsplash.com/photo-1612817288484-6f916006741a?auto=format&fit=crop&w=900&q=85",
-  "Body Care":
-    "https://images.unsplash.com/photo-1608248597279-f99d160bfcbc?auto=format&fit=crop&w=900&q=85",
-  "Lip Care":
-    "https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=900&q=85",
-};
-
-async function connectDatabase() {
-  const { collections, dbType } = await initDatabase({
-    mongoUri,
-    databaseName,
-    storePath: seedPath,
-    adminEmail: process.env.ADMIN_EMAIL || "admin@luma.skin",
-    adminPassword: process.env.ADMIN_PASSWORD || "admin123",
-    hashPassword,
-  });
-
-  currentDbType = dbType;
-  productsCollection = collections.productsCollection;
-  cartsCollection = collections.cartsCollection;
-  wishlistsCollection = collections.wishlistsCollection;
-  ordersCollection = collections.ordersCollection;
-  reviewsCollection = collections.reviewsCollection;
-  contentCollection = collections.contentCollection;
-  usersCollection = collections.usersCollection;
-  contactMessagesCollection = collections.contactMessagesCollection;
-
-  if (dbType === "mongodb") {
-    const seed = JSON.parse(await readFile(seedPath, "utf8"));
-    if (seed.products?.length) {
-      await Promise.all(
-        seed.products.map((product) => {
-          const seededProduct = {
-            ...product,
-            inventory: product.inventory ?? 25,
-          };
-          const insertProduct = { ...seededProduct };
-          for (const field of [
-            "name",
-            "category",
-            "price",
-            "rating",
-            "reviews",
-            "size",
-            "image",
-            "description",
-          ])
-            delete insertProduct[field];
-          const update = {
-            $setOnInsert: insertProduct,
-            $set: {
-              name: product.name,
-              category: product.category,
-              price: product.price,
-              rating: product.rating,
-              reviews: product.reviews,
-              size: product.size,
-              ...(product.image ? { image: product.image } : {}),
-              ...(product.description
-                ? { description: product.description }
-                : {}),
-            },
-          };
-          return productsCollection.updateOne({ id: product.id }, update, {
-            upsert: true,
-          });
-        }),
-      );
-    }
+// Middleware: Authentication with Bearer JWT
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ ok: false, error: "Authentication required" });
   }
 
-  await productsCollection.createIndex({ category: 1 });
-  await productsCollection.createIndex({ name: "text" });
-
-  // Ensure healthy inventory baseline for all demo items
-  try {
-    await productsCollection.updateMany(
-      { $or: [{ inventory: { $lt: 5 } }, { inventory: { $exists: false } }] },
-      { $set: { inventory: 50 } },
-    );
-  } catch {}
-}
-
-async function getProducts() {
-  const products = await productsCollection
-    .find({}, { projection: { _id: 0 } })
-    .toArray();
-  return products.map((product) => ({
-    ...product,
-    image:
-      product.image ||
-      categoryMedia[product.category] ||
-      categoryMedia.Treatments,
-    description:
-      product.description ||
-      `${product.name}, thoughtfully made for a simple everyday ritual.`,
-    inventory:
-      typeof product.inventory === "number" && product.inventory >= 0
-        ? product.inventory
-        : 25,
-  }));
-}
-
-async function normalizeItems(items) {
-  if (!Array.isArray(items)) return null;
-  const products = await getProducts();
-  const normalized = [];
-  for (const item of items) {
-    const prodId = Number(item.productId || item.id);
-    const product = products.find((entry) => entry.id === prodId);
-    const quantity = Number(item.quantity);
-    if (!product || !Number.isInteger(quantity) || quantity < 1) {
-      return null;
-    }
-    const availableStock =
-      typeof product.inventory === "number" && product.inventory > 0
-        ? product.inventory
-        : 50;
-    if (quantity > availableStock) {
-      return null;
-    }
-    const existing = normalized.find((entry) => entry.productId === product.id);
-    if (existing) existing.quantity += quantity;
-    else normalized.push({ productId: product.id, quantity });
+  const token = authHeader.slice(7).trim();
+  const claims = readToken(token, jwtSecret);
+  if (!claims?.sub) {
+    return res.status(401).json({ ok: false, error: "Invalid or expired token" });
   }
-  return normalized;
+
+  const query = ObjectId.isValid(claims.sub)
+    ? { _id: new ObjectId(claims.sub) }
+    : { _id: claims.sub };
+
+  const user = await usersCollection.findOne(query);
+  if (!user) {
+    return res.status(401).json({ ok: false, error: "User not found" });
+  }
+
+  req.user = {
+    _id: user._id.toString(),
+    id: user._id.toString(),
+    email: user.email,
+    name: user.name,
+    role: user.role || "member",
+    avatar: user.avatar,
+  };
+  next();
 }
 
-const shippingRates = {
-  US: 5,
-  CA: 12,
-  GB: 15,
-  AU: 25,
-  IN: 18,
-  DE: 10,
-  FR: 10,
-  JP: 20,
-};
-
-function sendError(response, error, status = 500) {
-  console.error(error);
-  response.status(status).json({
-    ok: false,
-    error: status === 500 ? "Something went wrong. Please try again." : error,
-  });
-}
-
-function publicUser(user) {
-  return { id: user._id.toString(), email: user.email, role: user.role };
-}
-
-async function requireAuth(request, response, next) {
-  const header = request.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!token)
-    return response
-      .status(401)
-      .json({ ok: false, error: "Authentication required" });
-  try {
+// Middleware: Optional Authentication (for public shareable pages)
+async function optionalAuth(req, _res, next) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
     const claims = readToken(token, jwtSecret);
-    const user = await usersCollection.findOne({
-      _id: new ObjectId(claims.sub),
-    });
-    if (!user)
-      return response
-        .status(401)
-        .json({ ok: false, error: "User account not found" });
-    request.user = user;
-    next();
-  } catch {
-    response.status(401).json({ ok: false, error: "Invalid or expired token" });
-  }
-}
-
-async function optionalAuth(request, _response, next) {
-  const header = request.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (token) {
-    try {
-      const claims = readToken(token, jwtSecret);
-      const user = await usersCollection.findOne({
-        _id: new ObjectId(claims.sub),
-      });
-      if (user) request.user = user;
-    } catch {}
+    if (claims?.sub) {
+      const query = ObjectId.isValid(claims.sub)
+        ? { _id: new ObjectId(claims.sub) }
+        : { _id: claims.sub };
+      const user = await usersCollection.findOne(query);
+      if (user) {
+        req.user = {
+          _id: user._id.toString(),
+          id: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          role: user.role || "member",
+          avatar: user.avatar,
+        };
+      }
+    }
   }
   next();
 }
 
-function requireRole(role) {
-  return (request, response, next) =>
-    request.user?.role === role
-      ? next()
-      : response.status(403).json({ ok: false, error: "Permission denied" });
+// Helper: Log project activity
+async function logActivity(projectId, userId, userName, action, targetType, targetName) {
+  try {
+    await activitiesCollection.insertOne({
+      projectId: projectId.toString(),
+      userId: userId.toString(),
+      userName: userName || "Team Member",
+      action,
+      targetType,
+      targetName: targetName || "",
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(`[Activity] Failed logging activity: ${err.message}`);
+  }
 }
 
-app.get("/", (_request, response) =>
-  response.json({
-    name: "Luma Store API",
-    status: "running",
-    database: databaseName,
-    health: "/api/health",
-    products: "/api/products",
-    cart: "/api/cart/:sessionId",
-    wishlist: "/api/wishlist/:sessionId",
-    orders: "/api/orders",
-  }),
-);
+// ==========================================
+// 1. AUTHENTICATION & USER MANAGEMENT
+// ==========================================
 
-app.get("/api/health", async (_request, response) => {
+// Register
+app.post("/api/auth/register", async (req, res) => {
   try {
-    await database.command({ ping: 1 });
-    response.json({
-      ok: true,
-      service: "luma-store-api",
-      database: "connected",
-    });
-  } catch {
-    response
-      .status(503)
-      .json({ ok: false, service: "luma-store-api", database: "disconnected" });
-  }
-});
+    const { name, email, password, bio } = req.body;
+    if (!name?.trim() || !email?.trim() || !password) {
+      return res.status(400).json({ ok: false, error: "Name, email, and password are required" });
+    }
 
-app.post("/api/auth/register", async (request, response) => {
-  try {
-    const email = String(request.body.email || "")
-      .trim()
-      .toLowerCase();
-    const password = String(request.body.password || "");
-    if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8)
-      return response.status(400).json({
-        ok: false,
-        error: "Use a valid email and a password of at least 8 characters",
-      });
-    if (await usersCollection.findOne({ email }))
-      return response.status(409).json({
-        ok: false,
-        error: "An account with this email already exists",
-      });
-    const user = {
-      email,
-      passwordHash: await hashPassword(password),
-      role: "user",
-      createdAt: new Date(),
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await usersCollection.findOne({ email: normalizedEmail });
+    if (existing) {
+      return res.status(409).json({ ok: false, error: "An account with this email already exists" });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const newUser = {
+      name: name.trim(),
+      email: normalizedEmail,
+      passwordHash,
+      role: "member",
+      bio: (bio || "").trim().slice(0, 300),
+      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name.trim())}`,
+      createdAt: new Date().toISOString(),
     };
-    const result = await usersCollection.insertOne(user);
-    user._id = result.insertedId;
-    response.status(201).json({
+
+    const result = await usersCollection.insertOne(newUser);
+    const userId = result.insertedId.toString();
+    const token = createToken({ _id: userId, email: normalizedEmail, role: newUser.role }, jwtSecret);
+
+    res.status(201).json({
       ok: true,
-      data: { user: publicUser(user), token: createToken(user, jwtSecret) },
+      data: {
+        token,
+        user: {
+          id: userId,
+          _id: userId,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          bio: newUser.bio,
+          avatar: newUser.avatar,
+        },
+      },
     });
-  } catch (error) {
-    sendError(response, error);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-app.post("/api/auth/login", async (request, response) => {
+// Login
+app.post("/api/auth/login", async (req, res) => {
   try {
-    const email = String(request.body.email || "")
-      .trim()
-      .toLowerCase();
-    const user = await usersCollection.findOne({ email });
-    if (
-      !user ||
-      !(await verifyPassword(
-        String(request.body.password || ""),
-        user.passwordHash,
-      ))
-    )
-      return response
-        .status(401)
-        .json({ ok: false, error: "Invalid email or password" });
-    response.json({
-      ok: true,
-      data: { user: publicUser(user), token: createToken(user, jwtSecret) },
-    });
-  } catch (error) {
-    sendError(response, error);
-  }
-});
+    const { email, password } = req.body;
+    if (!email?.trim() || !password) {
+      return res.status(400).json({ ok: false, error: "Email and password are required" });
+    }
 
-app.get("/api/auth/google", (request, response) => {
-  if (!googleClientId || !googleClientSecret)
-    return response.status(503).json({
-      ok: false,
-      error: "Google sign-in is not configured on this server",
-    });
-  const state = jwt.sign({ nonce: randomUUID() }, jwtSecret, {
-    expiresIn: "10m",
-  });
-  const parameters = new URLSearchParams({
-    client_id: googleClientId,
-    redirect_uri: googleRedirectUri,
-    response_type: "code",
-    scope: "openid email profile",
-    state,
-    prompt: "select_account",
-  });
-  response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${parameters}`);
-});
-
-app.get("/api/auth/google/callback", async (request, response) => {
-  try {
-    if (!googleClientId || !googleClientSecret)
-      throw new Error("Google sign-in is not configured on this server");
-    if (!request.query.code || !request.query.state) throw new Error("Google sign-in was cancelled");
-    jwt.verify(String(request.query.state), jwtSecret);
-
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code: String(request.query.code),
-        client_id: googleClientId,
-        client_secret: googleClientSecret,
-        redirect_uri: googleRedirectUri,
-        grant_type: "authorization_code",
-      }),
-    });
-    if (!tokenResponse.ok) throw new Error("Google could not verify this sign-in");
-    const tokens = await tokenResponse.json();
-    const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    });
-    if (!profileResponse.ok) throw new Error("Google profile could not be loaded");
-    const profile = await profileResponse.json();
-    if (!profile.sub || !profile.email || !profile.email_verified)
-      throw new Error("A verified Google email address is required");
-
-    const email = profile.email.toLowerCase();
-    let user = await usersCollection.findOne({ googleId: profile.sub });
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await usersCollection.findOne({ email: normalizedEmail });
     if (!user) {
-      user = await usersCollection.findOne({ email });
-      if (user) {
-        await usersCollection.updateOne({ _id: user._id }, { $set: { googleId: profile.sub } });
-        user.googleId = profile.sub;
-      } else {
-        const newUser = {
-          email,
-          googleId: profile.sub,
-          role: "user",
-          createdAt: new Date(),
+      return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    }
+
+    const isValid = await verifyPassword(password, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    }
+
+    const userId = user._id.toString();
+    const token = createToken({ _id: userId, email: user.email, role: user.role || "member" }, jwtSecret);
+
+    res.json({
+      ok: true,
+      data: {
+        token,
+        user: {
+          id: userId,
+          _id: userId,
+          name: user.name,
+          email: user.email,
+          role: user.role || "member",
+          bio: user.bio || "",
+          avatar: user.avatar,
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Current user profile
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  res.json({ ok: true, data: { user: req.user } });
+});
+
+// Search registered users to add as project members
+app.get("/api/users/search", requireAuth, async (req, res) => {
+  try {
+    const q = (req.query.q || "").trim().toLowerCase();
+    if (!q || q.length < 2) {
+      return res.json({ ok: true, users: [] });
+    }
+
+    const allUsers = await usersCollection.find({}).toArray();
+    const matches = allUsers
+      .filter((u) => u.email?.toLowerCase().includes(q) || u.name?.toLowerCase().includes(q))
+      .slice(0, 10)
+      .map((u) => ({
+        id: u._id.toString(),
+        _id: u._id.toString(),
+        name: u.name,
+        email: u.email,
+        avatar: u.avatar,
+      }));
+
+    res.json({ ok: true, users: matches });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 2. PROJECT COLLABORATION
+// ==========================================
+
+// Helper: Check project membership
+function isMemberOrOwner(project, userId) {
+  if (!project || !userId) return false;
+  if (project.ownerId?.toString() === userId.toString()) return true;
+  return Array.isArray(project.members) && project.members.some(
+    (m) => (m.userId?.toString() || m.id?.toString()) === userId.toString(),
+  );
+}
+
+// List user's projects (owned or collaborating)
+app.get("/api/projects", requireAuth, async (req, res) => {
+  try {
+    const allProjects = await projectsCollection.find({}).toArray();
+    const userProjects = allProjects.filter((p) => isMemberOrOwner(p, req.user.id));
+
+    // Enrich with note and file counts
+    const enriched = await Promise.all(
+      userProjects.map(async (project) => {
+        const pId = project._id.toString();
+        const [notesCount, filesCount] = await Promise.all([
+          notesCollection.countDocuments({ projectId: pId }),
+          filesCollection.countDocuments({ projectId: pId }),
+        ]);
+        return {
+          ...project,
+          notesCount,
+          filesCount,
+          membersCount: project.members?.length || 1,
         };
-        const result = await usersCollection.insertOne(newUser);
-        user = { ...newUser, _id: result.insertedId };
+      }),
+    );
+
+    res.json({ ok: true, projects: enriched });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Create project
+app.post("/api/projects", requireAuth, async (req, res) => {
+  try {
+    const { name, description, tags, isPublic } = req.body;
+    if (!name?.trim()) {
+      return res.status(400).json({ ok: false, error: "Project name is required" });
+    }
+
+    const shareToken = `collab_${randomUUID().slice(0, 12)}`;
+    const newProject = {
+      name: name.trim(),
+      description: (description || "").trim(),
+      tags: Array.isArray(tags) ? tags : (tags || "").split(",").map((t) => t.trim()).filter(Boolean),
+      ownerId: req.user.id,
+      ownerName: req.user.name,
+      ownerEmail: req.user.email,
+      members: [
+        {
+          userId: req.user.id,
+          name: req.user.name,
+          email: req.user.email,
+          role: "owner",
+        },
+      ],
+      isPublic: Boolean(isPublic),
+      shareToken,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const result = await projectsCollection.insertOne(newProject);
+    const projectId = result.insertedId.toString();
+
+    await logActivity(projectId, req.user.id, req.user.name, "created_project", "project", newProject.name);
+
+    res.status(201).json({
+      ok: true,
+      data: {
+        ...newProject,
+        _id: projectId,
+        id: projectId,
+        notesCount: 0,
+        filesCount: 0,
+        membersCount: 1,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Get single project
+app.get("/api/projects/:id", optionalAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) {
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+
+    const hasAccess = project.isPublic || (req.user && isMemberOrOwner(project, req.user.id));
+    if (!hasAccess) {
+      return res.status(403).json({ ok: false, error: "Access denied. Private project." });
+    }
+
+    const [notesCount, filesCount] = await Promise.all([
+      notesCollection.countDocuments({ projectId: project._id.toString() }),
+      filesCollection.countDocuments({ projectId: project._id.toString() }),
+    ]);
+
+    res.json({
+      ok: true,
+      project: {
+        ...project,
+        id: project._id.toString(),
+        notesCount,
+        filesCount,
+        membersCount: project.members?.length || 1,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Update project
+app.put("/api/projects/:id", requireAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) {
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+
+    if (!isMemberOrOwner(project, req.user.id)) {
+      return res.status(403).json({ ok: false, error: "Only project members can edit details" });
+    }
+
+    const { name, description, tags, isPublic } = req.body;
+    const updates = { updatedAt: new Date().toISOString() };
+    if (name) updates.name = name.trim();
+    if (description !== undefined) updates.description = description.trim();
+    if (tags !== undefined) updates.tags = Array.isArray(tags) ? tags : tags.split(",").map((t) => t.trim()).filter(Boolean);
+    if (isPublic !== undefined) updates.isPublic = Boolean(isPublic);
+
+    await projectsCollection.updateOne(query, { $set: updates });
+    const updated = await projectsCollection.findOne(query);
+
+    res.json({ ok: true, project: { ...updated, id: updated._id.toString() } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Delete project
+app.delete("/api/projects/:id", requireAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) {
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+
+    if (project.ownerId?.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ ok: false, error: "Only the project creator can delete it" });
+    }
+
+    await Promise.all([
+      projectsCollection.deleteOne(query),
+      notesCollection.deleteMany({ projectId: pId }),
+      filesCollection.deleteMany({ projectId: pId }),
+      activitiesCollection.deleteMany({ projectId: pId }),
+    ]);
+
+    res.json({ ok: true, message: "Project and all assets deleted" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Add member to project
+app.post("/api/projects/:id/members", requireAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) {
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+
+    if (!isMemberOrOwner(project, req.user.id)) {
+      return res.status(403).json({ ok: false, error: "Permission denied" });
+    }
+
+    const { email, role = "collaborator" } = req.body;
+    if (!email?.trim()) {
+      return res.status(400).json({ ok: false, error: "User email is required" });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const targetUser = await usersCollection.findOne({ email: normalizedEmail });
+    if (!targetUser) {
+      return res.status(404).json({
+        ok: false,
+        error: `No registered user found with email "${normalizedEmail}". Ask them to register first.`,
+      });
+    }
+
+    const targetUserId = targetUser._id.toString();
+    const alreadyMember = project.members?.some(
+      (m) => m.userId?.toString() === targetUserId || m.email?.toLowerCase() === normalizedEmail,
+    );
+
+    if (alreadyMember) {
+      return res.status(400).json({ ok: false, error: "User is already a member of this project" });
+    }
+
+    const newMember = {
+      userId: targetUserId,
+      name: targetUser.name,
+      email: targetUser.email,
+      role,
+      avatar: targetUser.avatar,
+    };
+
+    const updatedMembers = [...(project.members || []), newMember];
+    await projectsCollection.updateOne(query, {
+      $set: { members: updatedMembers, updatedAt: new Date().toISOString() },
+    });
+
+    await logActivity(pId, req.user.id, req.user.name, "added_member", "member", targetUser.name);
+
+    res.status(201).json({ ok: true, member: newMember, members: updatedMembers });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Remove member from project
+app.delete("/api/projects/:id/members/:userId", requireAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const targetUserId = req.params.userId;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) {
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+
+    if (project.ownerId?.toString() !== req.user.id && req.user.id !== targetUserId) {
+      return res.status(403).json({ ok: false, error: "Only project owner can remove members" });
+    }
+
+    if (project.ownerId?.toString() === targetUserId) {
+      return res.status(400).json({ ok: false, error: "Project owner cannot be removed" });
+    }
+
+    const updatedMembers = (project.members || []).filter(
+      (m) => m.userId?.toString() !== targetUserId,
+    );
+    await projectsCollection.updateOne(query, {
+      $set: { members: updatedMembers, updatedAt: new Date().toISOString() },
+    });
+
+    res.json({ ok: true, members: updatedMembers });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Public shareable project page (Read-Only)
+app.get("/api/projects/public/:shareToken", async (req, res) => {
+  try {
+    const shareToken = req.params.shareToken;
+    const project = await projectsCollection.findOne({ shareToken });
+
+    if (!project) {
+      return res.status(404).json({ ok: false, error: "Shared project not found or invalid link" });
+    }
+
+    if (!project.isPublic) {
+      return res.status(403).json({ ok: false, error: "This project has been set to private by its owner" });
+    }
+
+    const pId = project._id.toString();
+    const [notes, files, analytics] = await Promise.all([
+      notesCollection.find({ projectId: pId }).sort({ updatedAt: -1 }).toArray(),
+      filesCollection.find({ projectId: pId }).sort({ createdAt: -1 }).toArray(),
+      activitiesCollection.find({ projectId: pId }).sort({ createdAt: -1 }).limit(10).toArray(),
+    ]);
+
+    res.json({
+      ok: true,
+      project: {
+        ...project,
+        id: pId,
+        notes,
+        files: files.map((f) => ({
+          id: f._id.toString(),
+          _id: f._id.toString(),
+          originalName: f.originalName,
+          fileType: f.fileType,
+          size: f.size,
+          extension: f.extension,
+          uploadedByName: f.uploadedByName,
+          content: f.content,
+          createdAt: f.createdAt,
+        })),
+        recentActivity: analytics,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 3. MARKDOWN NOTES WITH GEMINI AI
+// ==========================================
+
+// List project notes
+app.get("/api/projects/:id/notes", optionalAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) return res.status(404).json({ ok: false, error: "Project not found" });
+    if (!project.isPublic && (!req.user || !isMemberOrOwner(project, req.user.id))) {
+      return res.status(403).json({ ok: false, error: "Access denied" });
+    }
+
+    const notes = await notesCollection.find({ projectId: pId }).sort({ updatedAt: -1 }).toArray();
+    res.json({
+      ok: true,
+      notes: notes.map((n) => ({ ...n, id: n._id.toString() })),
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Create note
+app.post("/api/projects/:id/notes", requireAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) return res.status(404).json({ ok: false, error: "Project not found" });
+    if (!isMemberOrOwner(project, req.user.id)) {
+      return res.status(403).json({ ok: false, error: "Only project members can create notes" });
+    }
+
+    const { title, content, tags } = req.body;
+    if (!title?.trim()) {
+      return res.status(400).json({ ok: false, error: "Note title is required" });
+    }
+
+    const newNote = {
+      projectId: pId,
+      title: title.trim(),
+      content: content || "",
+      tags: Array.isArray(tags) ? tags : (tags || "").split(",").map((t) => t.trim()).filter(Boolean),
+      authorId: req.user.id,
+      authorName: req.user.name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const result = await notesCollection.insertOne(newNote);
+    const noteId = result.insertedId.toString();
+
+    await logActivity(pId, req.user.id, req.user.name, "created_note", "note", newNote.title);
+
+    res.status(201).json({
+      ok: true,
+      note: { ...newNote, _id: noteId, id: noteId },
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Update note
+app.put("/api/projects/:id/notes/:noteId", requireAuth, async (req, res) => {
+  try {
+    const { id: pId, noteId } = req.params;
+    const noteQuery = ObjectId.isValid(noteId) ? { _id: new ObjectId(noteId) } : { _id: noteId };
+    const note = await notesCollection.findOne(noteQuery);
+
+    if (!note || note.projectId !== pId) {
+      return res.status(404).json({ ok: false, error: "Note not found in this project" });
+    }
+
+    const { title, content, tags } = req.body;
+    const updates = { updatedAt: new Date().toISOString() };
+    if (title) updates.title = title.trim();
+    if (content !== undefined) updates.content = content;
+    if (tags !== undefined) updates.tags = Array.isArray(tags) ? tags : tags.split(",").map((t) => t.trim()).filter(Boolean);
+
+    await notesCollection.updateOne(noteQuery, { $set: updates });
+    const updated = await notesCollection.findOne(noteQuery);
+
+    await logActivity(pId, req.user.id, req.user.name, "updated_note", "note", updated.title);
+
+    res.json({ ok: true, note: { ...updated, id: updated._id.toString() } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Delete note
+app.delete("/api/projects/:id/notes/:noteId", requireAuth, async (req, res) => {
+  try {
+    const { id: pId, noteId } = req.params;
+    const noteQuery = ObjectId.isValid(noteId) ? { _id: new ObjectId(noteId) } : { _id: noteId };
+    const note = await notesCollection.findOne(noteQuery);
+
+    if (!note || note.projectId !== pId) {
+      return res.status(404).json({ ok: false, error: "Note not found" });
+    }
+
+    await notesCollection.deleteOne(noteQuery);
+    await logActivity(pId, req.user.id, req.user.name, "deleted_note", "note", note.title);
+
+    res.json({ ok: true, message: "Note deleted" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 4. FILE UPLOAD & PREVIEW
+// ==========================================
+
+const CODE_EXTENSIONS = new Set([
+  "js", "jsx", "ts", "tsx", "py", "html", "css", "json", "md", "sql", "sh", "yaml", "yml", "xml", "csv", "env", "txt"
+]);
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "svg", "gif", "webp"]);
+
+function categorizeFile(filename, mimeType = "") {
+  const ext = filename.split(".").pop().toLowerCase();
+  if (CODE_EXTENSIONS.has(ext) || mimeType.startsWith("text/") || mimeType.includes("javascript") || mimeType.includes("json")) {
+    return { fileType: "code", extension: ext };
+  }
+  if (IMAGE_EXTENSIONS.has(ext) || mimeType.startsWith("image/")) {
+    return { fileType: "image", extension: ext };
+  }
+  return { fileType: "document", extension: ext };
+}
+
+// Upload file to project (supports multipart/form-data and direct JSON text upload)
+app.post("/api/projects/:id/files", requireAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) return res.status(404).json({ ok: false, error: "Project not found" });
+    if (!isMemberOrOwner(project, req.user.id)) {
+      return res.status(403).json({ ok: false, error: "Only project members can upload files" });
+    }
+
+    const contentType = req.headers["content-type"] || "";
+
+    // 1. Direct JSON code/text upload
+    if (contentType.includes("application/json")) {
+      const { filename, content, mimeType } = req.body;
+      if (!filename?.trim() || content === undefined) {
+        return res.status(400).json({ ok: false, error: "filename and content are required" });
+      }
+
+      const { fileType, extension } = categorizeFile(filename, mimeType);
+      const safeFilename = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const filePath = path.join(uploadsDir, safeFilename);
+
+      await writeFile(filePath, content, "utf-8");
+
+      const fileRecord = {
+        projectId: pId,
+        originalName: filename.trim(),
+        filename: safeFilename,
+        mimeType: mimeType || "text/plain",
+        size: Buffer.byteLength(content, "utf-8"),
+        extension,
+        fileType,
+        uploadedBy: req.user.id,
+        uploadedByName: req.user.name,
+        content: content.length < 100000 ? content : undefined,
+        createdAt: new Date().toISOString(),
+      };
+
+      const result = await filesCollection.insertOne(fileRecord);
+      const fileId = result.insertedId.toString();
+
+      await logActivity(pId, req.user.id, req.user.name, "uploaded_file", "file", fileRecord.originalName);
+
+      return res.status(201).json({
+        ok: true,
+        file: { ...fileRecord, _id: fileId, id: fileId },
+      });
+    }
+
+    // 2. Multipart file upload using formidable
+    const form = formidable({
+      uploadDir: uploadsDir,
+      keepExtensions: true,
+      maxFileSize: 50 * 1024 * 1024, // 50MB limit
+    });
+
+    form.parse(req, async (err, _fields, formFiles) => {
+      if (err) {
+        return res.status(400).json({ ok: false, error: `Upload error: ${err.message}` });
+      }
+
+      const uploaded = formFiles.file;
+      const fileObj = Array.isArray(uploaded) ? uploaded[0] : uploaded;
+      if (!fileObj) {
+        return res.status(400).json({ ok: false, error: "No file provided in form" });
+      }
+
+      const originalName = fileObj.originalFilename || path.basename(fileObj.filepath);
+      const safeFilename = path.basename(fileObj.filepath);
+      const { fileType, extension } = categorizeFile(originalName, fileObj.mimetype);
+
+      let textContent;
+      if (fileType === "code") {
+        try {
+          textContent = await readFile(fileObj.filepath, "utf-8");
+          if (textContent.length > 100000) textContent = textContent.slice(0, 100000);
+        } catch {}
+      }
+
+      const fileRecord = {
+        projectId: pId,
+        originalName,
+        filename: safeFilename,
+        mimeType: fileObj.mimetype || "application/octet-stream",
+        size: fileObj.size,
+        extension,
+        fileType,
+        uploadedBy: req.user.id,
+        uploadedByName: req.user.name,
+        content: textContent,
+        createdAt: new Date().toISOString(),
+      };
+
+      const result = await filesCollection.insertOne(fileRecord);
+      const fileId = result.insertedId.toString();
+
+      await logActivity(pId, req.user.id, req.user.name, "uploaded_file", "file", originalName);
+
+      res.status(201).json({
+        ok: true,
+        file: { ...fileRecord, _id: fileId, id: fileId },
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// List project files
+app.get("/api/projects/:id/files", optionalAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) return res.status(404).json({ ok: false, error: "Project not found" });
+    if (!project.isPublic && (!req.user || !isMemberOrOwner(project, req.user.id))) {
+      return res.status(403).json({ ok: false, error: "Access denied" });
+    }
+
+    const files = await filesCollection.find({ projectId: pId }).sort({ createdAt: -1 }).toArray();
+    res.json({
+      ok: true,
+      files: files.map((f) => ({ ...f, id: f._id.toString() })),
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Get raw file content for preview
+app.get("/api/files/:fileId/raw", optionalAuth, async (req, res) => {
+  try {
+    const fileId = req.params.fileId;
+    const query = ObjectId.isValid(fileId) ? { _id: new ObjectId(fileId) } : { _id: fileId };
+    const file = await filesCollection.findOne(query);
+
+    if (!file) return res.status(404).json({ ok: false, error: "File not found" });
+
+    // If cached in record
+    if (file.content !== undefined) {
+      res.setHeader("Content-Type", file.mimeType || "text/plain");
+      return res.send(file.content);
+    }
+
+    const diskPath = path.join(uploadsDir, file.filename);
+    if (existsSync(diskPath)) {
+      res.setHeader("Content-Type", file.mimeType || "application/octet-stream");
+      return res.sendFile(diskPath);
+    }
+
+    res.status(404).json({ ok: false, error: "Physical file not found on disk" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Download file
+app.get("/api/files/:fileId/download", optionalAuth, async (req, res) => {
+  try {
+    const fileId = req.params.fileId;
+    const query = ObjectId.isValid(fileId) ? { _id: new ObjectId(fileId) } : { _id: fileId };
+    const file = await filesCollection.findOne(query);
+
+    if (!file) return res.status(404).json({ ok: false, error: "File not found" });
+
+    const diskPath = path.join(uploadsDir, file.filename);
+    if (existsSync(diskPath)) {
+      return res.download(diskPath, file.originalName);
+    }
+
+    if (file.content) {
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.originalName)}"`);
+      res.setHeader("Content-Type", file.mimeType || "text/plain");
+      return res.send(file.content);
+    }
+
+    res.status(404).json({ ok: false, error: "File data not found" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Delete file
+app.delete("/api/projects/:id/files/:fileId", requireAuth, async (req, res) => {
+  try {
+    const { id: pId, fileId } = req.params;
+    const fileQuery = ObjectId.isValid(fileId) ? { _id: new ObjectId(fileId) } : { _id: fileId };
+    const file = await filesCollection.findOne(fileQuery);
+
+    if (!file || file.projectId !== pId) {
+      return res.status(404).json({ ok: false, error: "File not found" });
+    }
+
+    const diskPath = path.join(uploadsDir, file.filename);
+    if (existsSync(diskPath)) {
+      await unlink(diskPath).catch(() => {});
+    }
+
+    await filesCollection.deleteOne(fileQuery);
+    await logActivity(pId, req.user.id, req.user.name, "deleted_file", "file", file.originalName);
+
+    res.json({ ok: true, message: "File deleted" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 5. CONTRIBUTION ANALYTICS
+// ==========================================
+
+app.get("/api/projects/:id/analytics", optionalAuth, async (req, res) => {
+  try {
+    const pId = req.params.id;
+    const query = ObjectId.isValid(pId) ? { _id: new ObjectId(pId) } : { _id: pId };
+    const project = await projectsCollection.findOne(query);
+
+    if (!project) return res.status(404).json({ ok: false, error: "Project not found" });
+
+    const [notes, files, activities] = await Promise.all([
+      notesCollection.find({ projectId: pId }).toArray(),
+      filesCollection.find({ projectId: pId }).toArray(),
+      activitiesCollection.find({ projectId: pId }).sort({ createdAt: -1 }).limit(25).toArray(),
+    ]);
+
+    // Aggregate contributions per member
+    const memberStats = {};
+    for (const member of project.members || []) {
+      const mId = member.userId?.toString() || member.id?.toString();
+      memberStats[mId] = {
+        userId: mId,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+        notesCount: 0,
+        filesCount: 0,
+        totalActions: 0,
+      };
+    }
+
+    for (const note of notes) {
+      const aId = note.authorId?.toString();
+      if (memberStats[aId]) {
+        memberStats[aId].notesCount++;
+        memberStats[aId].totalActions++;
       }
     }
-    const token = createToken(user, jwtSecret);
-    response.redirect(`${clientUrl}/auth/google/callback?token=${encodeURIComponent(token)}`);
-  } catch (error) {
-    console.error(error);
-    response.redirect(`${clientUrl}/login?error=${encodeURIComponent(error.message)}`);
-  }
-});
 
-app.get("/api/auth/me", requireAuth, (request, response) =>
-  response.json({ ok: true, data: { user: publicUser(request.user) } }),
-);
-app.post("/api/auth/logout", requireAuth, (_request, response) =>
-  response.json({ ok: true, message: "Logged out" }),
-);
-
-app.get("/api/products", async (request, response) => {
-  const query = String(request.query.search || "").toLowerCase();
-  const category = String(request.query.category || "");
-  const maxPrice = Number(request.query.maxPrice || Number.MAX_SAFE_INTEGER);
-  const sort = String(request.query.sort || "featured");
-  const products = (await getProducts()).filter(
-    (product) =>
-      (!category || product.category === category) &&
-      product.price <= maxPrice &&
-      product.name.toLowerCase().includes(query),
-  );
-  products.sort((first, second) =>
-    sort === "price-low"
-      ? first.price - second.price
-      : sort === "price-high"
-        ? second.price - first.price
-        : sort === "rating"
-          ? second.rating - first.rating
-          : sort === "name"
-            ? first.name.localeCompare(second.name)
-            : first.id - second.id,
-  );
-  response.json({ products, total: products.length });
-});
-
-app.get("/api/products/:id", async (request, response) => {
-  try {
-    const product = (await getProducts()).find(
-      (entry) => entry.id === Number(request.params.id),
-    );
-    if (!product)
-      return response.status(404).json({ error: "Product not found" });
-    response.json(product);
-  } catch (error) {
-    sendError(response, error);
-  }
-});
-
-app.get("/api/content/:key", async (request, response) => {
-  try {
-    const content = await contentCollection.findOne(
-      { key: request.params.key },
-      { projection: { _id: 0, key: 0 } },
-    );
-    if (!content)
-      return response.status(404).json({ error: "Content not found" });
-    response.json(content);
-  } catch (error) {
-    sendError(response, error);
-  }
-});
-
-app.get("/api/products/:id/reviews", async (request, response) => {
-  try {
-    const reviews = await reviewsCollection
-      .find(
-        { productId: Number(request.params.id) },
-        { projection: { authorToken: 0 } },
-      )
-      .sort({ createdAt: -1 })
-      .toArray();
-    response.json({
-      reviews: reviews.map((review) => ({
-        ...review,
-        _id: review._id.toString(),
-        userId: review.userId?.toString(),
-      })),
-    });
-  } catch (error) {
-    sendError(response, error);
-  }
-});
-
-app.post("/api/checkout-session", requireAuth, async (request, response) => {
-  try {
-    if (!stripe)
-      return response.status(503).json({
-        error:
-          "Payments are not configured. Add STRIPE_SECRET_KEY to the server environment.",
-      });
-    const { sessionId, customer, items } = request.body;
-    const normalizedItems = await normalizeItems(items);
-    if (!sessionId || !customer?.email || !normalizedItems?.length)
-      return response
-        .status(400)
-        .json({ error: "sessionId, customer.email, and items are required" });
-    const products = await getProducts();
-    const lineItems = normalizedItems.map(({ productId, quantity }) => {
-      const product = products.find((entry) => entry.id === productId);
-      return { productId, name: product.name, price: product.price, quantity };
-    });
-    const subtotal = lineItems.reduce(
-      (total, item) => total + item.price * item.quantity,
-      0,
-    );
-    const shipping = subtotal >= 50 ? 0 : shippingRates[customer.country] || 5;
-    const order = {
-      id: `LUMA-${randomUUID().slice(0, 8).toUpperCase()}`,
-      sessionId,
-      customer,
-      items: lineItems,
-      subtotal,
-      shipping,
-      total: subtotal + shipping,
-      paymentStatus: "pending",
-      createdAt: new Date(),
-      status: "awaiting_payment",
-    };
-    await ordersCollection.insertOne(order);
-    const checkoutSession = await stripe.checkout.sessions.create({
-      mode: "payment",
-      customer_email: customer.email,
-      line_items: lineItems.map((item) => ({
-        price_data: {
-          currency: "usd",
-          product_data: { name: item.name },
-          unit_amount: Math.round(item.price * 100),
-        },
-        quantity: item.quantity,
-      })),
-      shipping_options: shipping
-        ? [
-            {
-              shipping_rate_data: {
-                type: "fixed_amount",
-                fixed_amount: {
-                  amount: Math.round(shipping * 100),
-                  currency: "usd",
-                },
-                display_name: `Shipping to ${customer.country}`,
-              },
-            },
-          ]
-        : undefined,
-      metadata: { orderId: order.id },
-      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/checkout?paid=1&order=${order.id}`,
-      cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/checkout?cancelled=1`,
-    });
-    response.status(201).json({ url: checkoutSession.url, orderId: order.id });
-  } catch (error) {
-    sendError(response, error);
-  }
-});
-
-app.post(
-  "/api/products/:id/reviews",
-  optionalAuth,
-  async (request, response) => {
-    try {
-      const productId = Number(request.params.id);
-      if (!(await productsCollection.findOne({ id: productId })))
-        return response.status(404).json({ error: "Product not found" });
-      const name = (request.body.name || request.body.author || "").trim();
-      const text = (request.body.text || request.body.comment || "").trim();
-      const rating = Number(request.body.rating);
-      if (
-        !name ||
-        !Number.isInteger(rating) ||
-        rating < 1 ||
-        rating > 5 ||
-        !text
-      )
-        return response
-          .status(400)
-          .json({ ok: false, error: "name, rating, and text are required" });
-      const review = {
-        productId,
-        userId: request.user?._id || "guest",
-        name: name.trim().slice(0, 80),
-        rating: Number(rating),
-        text: text.trim().slice(0, 1000),
-        createdAt: new Date(),
-      };
-      await reviewsCollection.insertOne(review);
-      response.status(201).json({
-        _id: review._id.toString(),
-        productId,
-        userId: request.user?._id?.toString() || "guest",
-        name: review.name,
-        rating: review.rating,
-        text: review.text,
-        createdAt: review.createdAt,
-      });
-    } catch (error) {
-      sendError(response, error);
+    for (const file of files) {
+      const uId = file.uploadedBy?.toString();
+      if (memberStats[uId]) {
+        memberStats[uId].filesCount++;
+        memberStats[uId].totalActions++;
+      }
     }
-  },
-);
 
-app.delete(
-  "/api/products/:id/reviews/:reviewId",
-  requireAuth,
-  async (request, response) => {
-    try {
-      if (!ObjectId.isValid(request.params.reviewId))
-        return response
-          .status(400)
-          .json({ error: "A valid reviewId is required" });
-      const review = await reviewsCollection.findOne({
-        _id: new ObjectId(request.params.reviewId),
-        productId: Number(request.params.id),
-      });
-      if (!review)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Review not found" });
-      if (
-        request.user.role !== "admin" &&
-        review.userId?.toString() !== request.user._id.toString()
-      )
-        return response
-          .status(403)
-          .json({ ok: false, error: "You can only delete your own review" });
-      const result = await reviewsCollection.deleteOne({ _id: review._id });
-      if (!result.deletedCount)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Review not found" });
-      response.json({ deleted: true });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
+    const contributions = Object.values(memberStats);
+    const totalActivityCount = contributions.reduce((acc, c) => acc + c.totalActions, 0);
 
-app.get("/api/cart/:sessionId", async (request, response) => {
-  const cart = await cartsCollection.findOne(
-    { _id: request.params.sessionId },
-    { projection: { _id: 0, items: 1 } },
-  );
-  response.json({
-    sessionId: request.params.sessionId,
-    items: cart?.items || [],
-  });
-});
-
-app.put("/api/cart/:sessionId", async (request, response) => {
-  const items = await normalizeItems(request.body.items);
-  if (!items)
-    return response.status(400).json({
-      error: "items must contain valid productId and quantity values",
-    });
-  await cartsCollection.replaceOne(
-    { _id: request.params.sessionId },
-    { _id: request.params.sessionId, items, updatedAt: new Date() },
-    { upsert: true },
-  );
-  response.json({ sessionId: request.params.sessionId, items });
-});
-
-app.get("/api/wishlist/:sessionId", async (request, response) => {
-  const wishlist = await wishlistsCollection.findOne(
-    { _id: request.params.sessionId },
-    { projection: { _id: 0, productIds: 1 } },
-  );
-  const productIds = wishlist?.productIds || [];
-  const products = await productsCollection
-    .find({ id: { $in: productIds } }, { projection: { _id: 0 } })
-    .toArray();
-  response.json({ productIds, products });
-});
-
-app.post("/api/wishlist/:sessionId/:productId", async (request, response) => {
-  const productId = Number(request.params.productId);
-  if (!(await productsCollection.findOne({ id: productId })))
-    return response.status(404).json({ error: "Product not found" });
-  const wishlist = await wishlistsCollection.findOne({
-    _id: request.params.sessionId,
-  });
-  const productIds = wishlist?.productIds || [];
-  const nextIds = productIds.includes(productId)
-    ? productIds.filter((id) => id !== productId)
-    : [...productIds, productId];
-  await wishlistsCollection.replaceOne(
-    { _id: request.params.sessionId },
-    {
-      _id: request.params.sessionId,
-      productIds: nextIds,
-      updatedAt: new Date(),
-    },
-    { upsert: true },
-  );
-  response.json({ productIds: nextIds });
-});
-
-app.post("/api/contact", async (request, response) => {
-  try {
-    const { name, email, message } = request.body;
-    if (!name?.trim() || !email?.trim() || !message?.trim())
-      return response
-        .status(400)
-        .json({ ok: false, error: "name, email, and message are required" });
-    const result = await contactMessagesCollection.insertOne({
-      name: name.trim().slice(0, 100),
-      email: email.trim().slice(0, 160),
-      message: message.trim().slice(0, 2000),
-      read: false,
-      createdAt: new Date(),
-    });
-    response.status(201).json({
+    res.json({
       ok: true,
-      data: { id: result.insertedId.toString() },
-      message: "Message sent",
+      analytics: {
+        totalNotes: notes.length,
+        totalFiles: files.length,
+        totalMembers: project.members?.length || 1,
+        totalActions: totalActivityCount,
+        memberContributions: contributions,
+        recentActivity: activities.map((a) => ({ ...a, id: a._id.toString() })),
+      },
     });
-  } catch (error) {
-    sendError(response, error);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-app.get(
-  "/api/admin/summary",
-  requireAuth,
-  requireRole("admin"),
-  async (_request, response) => {
-    try {
-      const [
-        totalProducts,
-        totalOrders,
-        totalUsers,
-        totalReviews,
-        lowStockProducts,
-        contactMessages,
-      ] = await Promise.all([
-        productsCollection.countDocuments(),
-        ordersCollection.countDocuments(),
-        usersCollection.countDocuments(),
-        reviewsCollection.countDocuments(),
-        productsCollection.countDocuments({ inventory: { $lte: 5 } }),
-        contactMessagesCollection.countDocuments({ read: false }),
-      ]);
-      response.json({
-        ok: true,
-        data: {
-          totalProducts,
-          totalOrders,
-          totalUsers,
-          totalReviews,
-          lowStockProducts,
-          contactMessages,
-        },
-      });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
+// ==========================================
+// 6. GEMINI AI API ENDPOINTS
+// ==========================================
 
-app.get(
-  "/api/admin/products",
-  requireAuth,
-  requireRole("admin"),
-  async (_request, response) => {
-    try {
-      response.json({ ok: true, data: await getProducts() });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.post(
-  "/api/admin/products",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      const product = request.body;
-      if (
-        !product.name?.trim() ||
-        !product.category?.trim() ||
-        Number(product.price) < 0 ||
-        !Number.isInteger(Number(product.inventory)) ||
-        Number(product.inventory) < 0
-      )
-        return response.status(400).json({
-          ok: false,
-          error:
-            "name, category, price, and non-negative integer inventory are required",
-        });
-      const id =
-        Number(product.id) ||
-        ((
-          await productsCollection
-            .find({}, { projection: { id: 1, _id: 0 } })
-            .sort({ id: -1 })
-            .limit(1)
-            .next()
-        )?.id || 0) + 1;
-      const created = {
-        ...product,
-        id,
-        price: Number(product.price),
-        inventory: Number(product.inventory),
-      };
-      await productsCollection.insertOne(created);
-      response.status(201).json({ ok: true, data: created });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.patch(
-  "/api/admin/products/:id",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      const updates = { ...request.body };
-      if (
-        updates.inventory !== undefined &&
-        (!Number.isInteger(Number(updates.inventory)) ||
-          Number(updates.inventory) < 0)
-      )
-        return response.status(400).json({
-          ok: false,
-          error: "inventory must be a non-negative integer",
-        });
-      if (updates.inventory !== undefined)
-        updates.inventory = Number(updates.inventory);
-      if (updates.price !== undefined) updates.price = Number(updates.price);
-      const result = await productsCollection.findOneAndUpdate(
-        { id: Number(request.params.id) },
-        { $set: updates },
-        { returnDocument: "after", projection: { _id: 0 } },
-      );
-      if (!result)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Product not found" });
-      response.json({ ok: true, data: result });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.delete(
-  "/api/admin/products/:id",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      const result = await productsCollection.deleteOne({
-        id: Number(request.params.id),
-      });
-      if (!result.deletedCount)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Product not found" });
-      response.json({ ok: true, message: "Product deleted" });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.get(
-  "/api/admin/orders",
-  requireAuth,
-  requireRole("admin"),
-  async (_request, response) => {
-    try {
-      response.json({
-        ok: true,
-        data: await ordersCollection
-          .find({}, { projection: { _id: 0 } })
-          .sort({ createdAt: -1 })
-          .limit(100)
-          .toArray(),
-      });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.patch(
-  "/api/admin/orders/:id",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      const result = await ordersCollection.findOneAndUpdate(
-        { id: request.params.id },
-        { $set: { status: String(request.body.status || "").slice(0, 40) } },
-        { returnDocument: "after", projection: { _id: 0 } },
-      );
-      if (!result)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Order not found" });
-      response.json({ ok: true, data: result });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.get(
-  "/api/admin/reviews",
-  requireAuth,
-  requireRole("admin"),
-  async (_request, response) => {
-    try {
-      response.json({
-        ok: true,
-        data: await reviewsCollection
-          .find({}, { projection: { authorToken: 0 } })
-          .sort({ createdAt: -1 })
-          .toArray(),
-      });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.delete(
-  "/api/admin/reviews/:reviewId",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      if (!ObjectId.isValid(request.params.reviewId))
-        return response
-          .status(400)
-          .json({ ok: false, error: "A valid reviewId is required" });
-      const result = await reviewsCollection.deleteOne({
-        _id: new ObjectId(request.params.reviewId),
-      });
-      if (!result.deletedCount)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Review not found" });
-      response.json({ ok: true, message: "Review deleted" });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.get(
-  "/api/admin/content/:key",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      const content = await contentCollection.findOne(
-        { key: request.params.key },
-        { projection: { _id: 0 } },
-      );
-      response.json({ ok: true, data: content });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.put(
-  "/api/admin/content/:key",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      const content = { ...request.body, key: request.params.key };
-      await contentCollection.replaceOne({ key: request.params.key }, content, {
-        upsert: true,
-      });
-      response.json({ ok: true, data: content });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.get(
-  "/api/admin/contact-messages",
-  requireAuth,
-  requireRole("admin"),
-  async (_request, response) => {
-    try {
-      response.json({
-        ok: true,
-        data: await contactMessagesCollection
-          .find({}, { projection: { _id: 0 } })
-          .sort({ createdAt: -1 })
-          .toArray(),
-      });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.patch(
-  "/api/admin/contact-messages/:id",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      if (!ObjectId.isValid(request.params.id))
-        return response
-          .status(400)
-          .json({ ok: false, error: "A valid message id is required" });
-      const result = await contactMessagesCollection.findOneAndUpdate(
-        { _id: new ObjectId(request.params.id) },
-        { $set: { read: Boolean(request.body.read) } },
-        { returnDocument: "after", projection: { _id: 0 } },
-      );
-      if (!result)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Message not found" });
-      response.json({ ok: true, data: result });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.delete(
-  "/api/admin/contact-messages/:id",
-  requireAuth,
-  requireRole("admin"),
-  async (request, response) => {
-    try {
-      if (!ObjectId.isValid(request.params.id))
-        return response
-          .status(400)
-          .json({ ok: false, error: "A valid message id is required" });
-      const result = await contactMessagesCollection.deleteOne({
-        _id: new ObjectId(request.params.id),
-      });
-      if (!result.deletedCount)
-        return response
-          .status(404)
-          .json({ ok: false, error: "Message not found" });
-      response.json({ ok: true, message: "Message deleted" });
-    } catch (error) {
-      sendError(response, error);
-    }
-  },
-);
-
-app.post("/api/orders", async (request, response) => {
+// /api/gemini/explain: Accepts text (code or notes) and returns an explanation
+app.post("/api/gemini/explain", async (req, res) => {
   try {
-    const { sessionId, customer, items } = request.body;
-    const normalizedItems = await normalizeItems(items);
-    if (!sessionId || !customer?.email || !normalizedItems?.length)
-      return response
-        .status(400)
-        .json({ error: "sessionId, customer.email, and items are required" });
-    const products = await getProducts();
-    const lineItems = normalizedItems.map(({ productId, quantity }) => {
-      const product = products.find((entry) => entry.id === productId);
-      return { productId, name: product.name, price: product.price, quantity };
-    });
-    const subtotal = lineItems.reduce(
-      (total, item) => total + item.price * item.quantity,
-      0,
-    );
-    const shipping = subtotal >= 50 ? 0 : shippingRates[customer.country] || 5;
-    const total = subtotal + shipping;
-    const order = {
-      id: `LUMA-${randomUUID().slice(0, 8).toUpperCase()}`,
-      sessionId,
-      customer,
-      items: lineItems,
-      subtotal,
-      shipping,
-      total,
-      paymentStatus: "pending",
-      createdAt: new Date(),
-      status: "received",
-    };
-    await ordersCollection.insertOne(order);
-    await cartsCollection.deleteOne({ _id: sessionId });
-    await Promise.all(
-      normalizedItems.map(async ({ productId, quantity }) => {
-        const prod = await productsCollection.findOne({ id: productId });
-        const currentStock = prod?.inventory ?? 25;
-        const newStock = Math.max(0, currentStock - quantity);
-        return productsCollection.updateOne(
-          { id: productId },
-          { $set: { inventory: newStock } },
-        );
-      }),
-    );
-    response.status(201).json({ ...order, _id: undefined });
-  } catch (error) {
-    sendError(response, error);
+    const { text, type = "code", language = "auto" } = req.body;
+    if (!text?.trim()) {
+      return res.status(400).json({ ok: false, error: "text parameter is required" });
+    }
+
+    const result = await explainContent({ text, type, language });
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-app.use((_request, response) =>
-  response.status(404).json({ error: "Route not found" }),
-);
+// /api/gemini/docs: Accepts code text and returns auto-generated documentation
+app.post("/api/gemini/docs", async (req, res) => {
+  try {
+    const { code, language = "javascript", context = "" } = req.body;
+    if (!code?.trim()) {
+      return res.status(400).json({ ok: false, error: "code parameter is required" });
+    }
 
-connectDatabase()
-  .then(() => {
-    app.listen(port, () =>
-      console.log(`Luma API running at http://localhost:${port} [Database: ${currentDbType}]`),
-    );
-  })
-  .catch((error) => {
-    console.error(`Database initialization failed: ${error.message}`);
+    const result = await generateCodeDocs({ code, language, context });
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// /api/gemini/readme: Accepts project description/code overview and helps generate a README file
+app.post("/api/gemini/readme", async (req, res) => {
+  try {
+    const { projectName, description, codeOverview, files } = req.body;
+    if (!projectName?.trim()) {
+      return res.status(400).json({ ok: false, error: "projectName is required" });
+    }
+
+    const result = await generateProjectReadme({
+      projectName: projectName.trim(),
+      description: description?.trim(),
+      codeOverview: codeOverview?.trim(),
+      files: Array.isArray(files) ? files : [],
+    });
+
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// /api/gemini/improve-note: Suggest improvements for note
+app.post("/api/gemini/improve-note", async (req, res) => {
+  try {
+    const { title = "Untitled Note", content } = req.body;
+    if (!content?.trim()) {
+      return res.status(400).json({ ok: false, error: "content is required" });
+    }
+
+    const result = await suggestNoteImprovements({ title, content });
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 404 Route Catch-All
+app.use((_req, res) => res.status(404).json({ ok: false, error: "API route not found" }));
+
+// Server bootstrap
+async function startServer() {
+  try {
+    const dbInit = await initDatabase({
+      mongoUri,
+      databaseName,
+      storePath,
+      adminEmail: process.env.ADMIN_EMAIL || "admin@collabsphere.dev",
+      adminPassword: process.env.ADMIN_PASSWORD || "admin123",
+      hashPassword,
+    });
+
+    currentDbType = dbInit.dbType;
+    usersCollection = dbInit.collections.usersCollection;
+    projectsCollection = dbInit.collections.projectsCollection;
+    notesCollection = dbInit.collections.notesCollection;
+    filesCollection = dbInit.collections.filesCollection;
+    activitiesCollection = dbInit.collections.activitiesCollection;
+
+    app.listen(port, () => {
+      console.log(`CollabSphere API running on http://localhost:${port} [DB: ${currentDbType}]`);
+    });
+  } catch (err) {
+    console.error("[Startup] Fatal server error:", err);
     process.exit(1);
-  });
+  }
+}
+
+startServer();
